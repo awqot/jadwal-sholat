@@ -1,0 +1,23 @@
+{
+  "name": "jadwal-sholat",
+  "version": "1.0.0",
+  "description": "Data jadwal waktu sholat",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/awqot/jadwal-sholat.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/awqot/jadwal-sholat/issues"
+  },
+  "homepage": "https://github.com/awqot/jadwal-sholat#readme",
+  "dependencies": {
+    "puppeteer": "^19.4.1"
+  }
+}

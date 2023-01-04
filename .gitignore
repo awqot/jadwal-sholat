@@ -1,0 +1,4 @@
+node_modules
+
+# terlalu besar untuk disimpan di git repository
+data/jadwal-sholat.json
