@@ -1,6 +1,6 @@
 import { JadwalSholat } from './src/index.js';
 
-const jadwalSholat = new JadwalSholat(location.origin);
+const jadwalSholat = new JadwalSholat(location.origin + location.pathname);
 
 /** ===== CONTEXT ===== */
 
