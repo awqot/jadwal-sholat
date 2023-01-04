@@ -2,9 +2,9 @@
 
 namespace Awqot\JadwalSholat;
 
-use DateTime;
+require_once __DIR__ . "/vendor/autoload.php";
 
-require_once __DIR__ . "/jadwal-sholat.php";
+use DateTime;
 
 $selectedProvince = isset($_GET["province"]) ? $_GET["province"] : "DKI JAKARTA";
 $selectedRegency = isset($_GET["regency"]) ? $_GET["regency"] : "KOTA JAKARTA";

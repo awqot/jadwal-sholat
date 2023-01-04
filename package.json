@@ -2,16 +2,14 @@
   "name": "jadwal-sholat",
   "version": "1.0.0",
   "description": "Data jadwal waktu sholat",
-  "main": "src/index.js",
+  "main": "js/jadwal-sholat.js",
+  "module": "js/jadwal-sholat.js",
   "type": "module",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/awqot/jadwal-sholat.git"
   },
-  "author": "",
+  "author": "Faisal Hakim",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/awqot/jadwal-sholat/issues"

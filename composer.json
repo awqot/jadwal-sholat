@@ -1,0 +1,19 @@
+{
+    "name": "awqot/jadwal-sholat",
+    "description": "Data jadwal waktu sholat",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Awqot\\JadwalSholat\\": "php/Awqot/JadwalSholat"
+        }
+    },
+    "authors": [
+        {
+            "name": "Faisal Hakim",
+            "email": "faisalhakim47@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {}
+}
