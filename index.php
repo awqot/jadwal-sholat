@@ -13,10 +13,7 @@ $metadata = Metadata::fromFile(
   __DIR__ . "/data/jadwal-sholat.metadata",
 );
 
-$jadwalSholat = JadwalSholat::fromFile(
-  __DIR__ . "/data/jadwal-sholat.metadata",
-  __DIR__ . "/data/jadwal-sholat.bin",
-);
+$jadwalSholat = JadwalSholat::default();
 
 $provinces = $jadwalSholat->getProvinces();
 $regencies = $jadwalSholat->getRegencies($selectedProvince);

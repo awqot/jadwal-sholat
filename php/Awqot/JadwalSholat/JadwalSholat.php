@@ -6,6 +6,14 @@ use Exception;
 
 class JadwalSholat
 {
+  public static function default()
+  {
+    return JadwalSholat::fromFile(
+      __DIR__ . "/../../../data/jadwal-sholat.metadata",
+      __DIR__ . "/../../../data/jadwal-sholat.bin",
+    );
+  }
+
   public static function fromFile(string $absMetadataFilePath, string $absJadwalSholatFilePath)
   {
     $metadata = Metadata::fromFile($absMetadataFilePath);

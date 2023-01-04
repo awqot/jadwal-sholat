@@ -4,6 +4,13 @@ namespace Awqot\JadwalSholat;
 
 class Metadata
 {
+  static function default()
+  {
+    return Metadata::fromFile(
+      __DIR__ . "/../../../data/jadwal-sholat.metadata",
+    );
+  }
+
   static function fromFile(string $absFilePath)
   {
     $lines = explode("\n", file_get_contents($absFilePath));
