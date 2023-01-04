@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 
-/** @typedef {import('../src/index.js').Metadata} Metadata */
+/** @typedef {import('../jadwal-sholat.js').Metadata} Metadata */
 /** @typedef {import('./fetch-data.js').Schedule} Schedule */
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));

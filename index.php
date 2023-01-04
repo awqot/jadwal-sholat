@@ -1,4 +1,29 @@
-<!DOCTYPE html>
+<?php
+
+namespace Awqot\JadwalSholat;
+
+use DateTime;
+
+require_once __DIR__ . "/jadwal-sholat.php";
+
+$selectedProvince = isset($_GET["province"]) ? $_GET["province"] : "DKI JAKARTA";
+$selectedRegency = isset($_GET["regency"]) ? $_GET["regency"] : "KOTA JAKARTA";
+
+$metadata = Metadata::fromFile(
+  __DIR__ . "/data/jadwal-sholat.metadata",
+);
+
+$jadwalSholat = JadwalSholat::fromFile(
+  __DIR__ . "/data/jadwal-sholat.metadata",
+  __DIR__ . "/data/jadwal-sholat.bin",
+);
+
+$provinces = $jadwalSholat->getProvinces();
+$regencies = $jadwalSholat->getRegencies($selectedProvince);
+$schedules = $jadwalSholat->getSchedules($selectedProvince, $selectedRegency);
+
+$months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+?><!DOCTYPE html>
 <html lang="id">
 
 <head>
@@ -71,8 +96,16 @@
                     class="form-select"
                     name="province"
                     required
-                    disabled
-                  ></select>
+                  >
+                    <?php foreach ($provinces as $province): ?>
+                      <option
+                        value="<?= $province ?>"
+                        <?php if ($province === $selectedProvince): ?>
+                          selected
+                        <?php endif ?>
+                      ><?= $province ?></option>
+                    <?php endforeach ?>
+                  </select>
                 </div>
               </div>
             </div>
@@ -85,8 +118,16 @@
                     class="form-select"
                     name="regency"
                     required
-                    disabled
-                  ></select>
+                  >
+                    <?php foreach ($regencies as $regency): ?>
+                      <option
+                        value="<?= $regency ?>"
+                        <?php if ($regency === $selectedRegency): ?>
+                          selected
+                        <?php endif ?>
+                      ><?= $regency ?></option>
+                    <?php endforeach ?>
+                  </select>
                 </div>
               </div>
             </div>
@@ -116,17 +157,21 @@
               <th class="text-center">Isya</th>
             </tr>
           </thead>
-          <tbody id="schedule-tbody-placeholder">
-            <tr>
-              <td colspan="9">
-                <p class="text-center py-5">Memuat...</p>
-              </td>
-            </tr>
+          <tbody>
+            <?php foreach ($schedules as $schedule): ?>
+              <tr>
+                <td class="text-center"><?= str_pad($schedule->date, 2, "0", STR_PAD_LEFT) ?> <?= $months[$schedule->month - 1] ?></td>
+                <?php foreach ($schedule->times as $time): ?>
+                  <td class="text-center"><?= str_pad($time->hour, 2, "0", STR_PAD_LEFT) ?>:<?= str_pad($time->minute, 2, "0", STR_PAD_LEFT) ?></td>
+                <?php endforeach ?>
+              </tr>
+            <?php endforeach ?>
           </tbody>
-          <tfoot class="d-none">
+          <tbody id="schedule-tbody-placeholder"></tbody>
+          <tfoot>
             <tr>
               <td colspan="9">
-                <p class="text-start fst-italic">Data jadwal sholat diambil dari <a href="https://bimasislam.kemenag.go.id/">https://bimasislam.kemenag.go.id</a> pada <time id="data-timestamp"></time></p>
+                <p class="text-start fst-italic">Data jadwal sholat diambil dari <a href="https://bimasislam.kemenag.go.id/">https://bimasislam.kemenag.go.id</a> pada <time value="<?= date(DateTime::RFC3339, round($metadata->timestamp / 1000)) ?>"></time></p>
               </td>
             </tr>
           </tfoot>
@@ -140,32 +185,18 @@
 
     const jadwalSholat = new JadwalSholat(location.origin + location.pathname.split('/').slice(0, -1).join('/'));
 
+
     /** ===== CONTEXT ===== */
 
     const query = new URLSearchParams(location.search);
-    const selectedProvinceName = query.get('province') ?? 'DKI JAKARTA';
-    const selectedRegencyName = query.get('regency') ?? 'KOTA JAKARTA';
+    const selectedProvinceName = query.get('province') ?? '<?= $selectedProvince ?>';
+    const selectedRegencyName = query.get('regency') ?? '<?= $selectedRegency ?>';
+
 
     /** ===== FORM ===== */
 
-    const provinces = await jadwalSholat.getProvinces();
-
     /** @type {HTMLSelectElement} */
     const provinceSelect = document.querySelector('select[name="province"]');
-
-    provinces.forEach((province) => {
-      const option = document.createElement('option');
-      option.value = province.name;
-      option.textContent = province.name;
-      if (province.name === selectedProvinceName) {
-        option.selected = true;
-      }
-      provinceSelect.appendChild(option);
-    });
-
-    provinceSelect.disabled = false;
-
-    let firstTimeRegencyLoad = true;
 
     async function reloadRegencyOptions() {
       /** @type {HTMLSelectElement} */
@@ -191,60 +222,13 @@
         const option = document.createElement('option');
         option.value = regencyName;
         option.textContent = regencyName;
-        if (regencyName === selectedRegencyName && firstTimeRegencyLoad) {
-          option.selected = true;
-        }
         regencySelect.appendChild(option);
       });
 
       regencySelect.disabled = false;
-      firstTimeRegencyLoad = false;
     }
-
-    await reloadRegencyOptions();
 
     provinceSelect.addEventListener('change', reloadRegencyOptions);
-
-
-    /** ===== TABLE ===== */
-
-    const schedules = await jadwalSholat.getSchedules(selectedProvinceName, selectedRegencyName);
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-    const tbody = document.createElement('tbody');
-
-    for (const schedule of schedules) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.classList.add('text-center');
-      td.textContent = `${schedule.date.toString().padStart(2, '0')} ${months[schedule.month - 1]}`;
-      tr.appendChild(td);
-      for (const time of schedule.times) {
-        const td = document.createElement('td');
-        td.classList.add('text-center');
-        td.textContent = `${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}`;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
-    /** @type {HTMLTableElement} */
-    const scheduleTable = document.getElementById('schedule-table');
-
-    /** @type {HTMLTableSectionElement} */
-    const placeholderTbody = document.getElementById('schedule-tbody-placeholder');
-
-    scheduleTable.replaceChild(tbody, placeholderTbody);
-
-    /** @type {HTMLTimeElement} */
-    const time = document.getElementById('data-timestamp');
-    const dataTimestamp = await jadwalSholat.getDataTimestamp();
-    time.value = dataTimestamp.toISOString();
-    time.textContent = dataTimestamp.toLocaleString();
-
-    const tfoot = document.querySelector('tfoot');
-    tfoot.classList.remove('d-none');
   </script>
 </body>
 

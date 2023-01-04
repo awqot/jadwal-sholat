@@ -13,20 +13,8 @@ export class JadwalSholat {
     this.cdn = cdn;
   }
 
-  #isDataLoaded = false;
-  async #ensureDataLoaded() {
-    if (this.#isDataLoaded) return;
-    const [binResp, metaResp] = await Promise.all([
-      fetch(`${this.cdn}/data/jadwal-sholat.bin`),
-      fetch(`${this.cdn}/data/jadwal-sholat.metadata`),
-    ]);
-    this.#buffer = new Uint16Array(await binResp.arrayBuffer());
-    this.#metadata = this.#parseMetadata(await metaResp.text());
-    this.#isDataLoaded = true;
-  }
-
   async getProvinces() {
-    await this.#ensureDataLoaded();
+    await this.#ensureMetadataLoaded();
     return this.#metadata.provinces;
   }
 
@@ -34,7 +22,7 @@ export class JadwalSholat {
    * @param {string} provinceName
    */
   async getRegencies(provinceName) {
-    await this.#ensureDataLoaded();
+    await this.#ensureMetadataLoaded();
     return this.#metadata.provinces
       .find((province) => province.name === provinceName)
       ?.regencies
@@ -46,7 +34,10 @@ export class JadwalSholat {
    * @param {string} regencyName
    */
   async getSchedules(provinceName, regencyName) {
-    await this.#ensureDataLoaded();
+    await Promise.all([
+      this.#ensureDataLoaded(),
+      this.#ensureMetadataLoaded(),
+    ]);
 
     const provinceIndex = this.#metadata.provinces
       .findIndex((province) => province.name === provinceName);
@@ -63,38 +54,45 @@ export class JadwalSholat {
     }
 
     const location = this.#join8bitTo16bit(provinceIndex, regencyIndex);
+    
+    const locationGroupWidth = 2556;
     const locationGroupsLength = this.#buffer.length / 2556;
+    /** @type {number|undefined} */
+    let locationGroupBeginAt = undefined;
+    const locationMetadataWidth = 1;
+    /** @type {number|undefined} */
+    let locationContentBeginAt = undefined;
+    const locationContentWidth = locationGroupWidth - locationMetadataWidth;
 
-    /** @type {Uint16Array|undefined} */
-    let locationBuffer = undefined;
     for (let index = 0; index < locationGroupsLength; index++) {
-      const beginReadAt = index * 2556;
+      const beginReadAt = index * locationGroupWidth;
       if (this.#buffer.at(beginReadAt) === location) {
-        locationBuffer = this.#buffer.slice(
-          beginReadAt + 1, /** remove location data */
-          beginReadAt + 2556,
-        );
+        locationGroupBeginAt = beginReadAt;
+        locationContentBeginAt = beginReadAt + locationMetadataWidth;
         break;
       }
     }
 
-    if (locationBuffer === undefined) {
+    if (locationGroupBeginAt === undefined || locationContentBeginAt === undefined) {
       throw new Error('Schedule not found');
     }
 
-    const dateMonthsLength = locationBuffer.length / 7;
-    const times = [];
+    const dateMonthMetadataWidth = 1;
+    const dateMonthGroupWidth = 7;
+    const dateMonthGroupLength = locationContentWidth / dateMonthGroupWidth;
 
-    for (let index = 0; index < dateMonthsLength; index++) {
-      const beginReadAt = index * 7;
-      const dateMonth = locationBuffer.at(beginReadAt) ?? 0;
-      const dateMonthBuffer = Array.from(locationBuffer.slice(
-        beginReadAt + 1, /** remove date month data */
-        beginReadAt + 7,
+    const schedules = [];
+
+    for (let index = 0; index < dateMonthGroupLength; index++) {
+      const beginReadAt = locationContentBeginAt + (index * dateMonthGroupWidth);
+      const dateMonth = this.#buffer.at(beginReadAt) ?? 0;
+      const dateMonthBuffer = Array.from(this.#buffer.slice(
+        beginReadAt + dateMonthMetadataWidth, /** remove date month data */
+        beginReadAt + dateMonthGroupWidth,
       ));
       const [date, month] = this.#split16bitTo8bit(dateMonth);
       const pairOfHourAndMinute = this.#decompactTimesBinary(Array.from(dateMonthBuffer));
-      times.push({
+      schedules.push({
         date,
         month,
         times: [
@@ -110,15 +108,31 @@ export class JadwalSholat {
       });
     }
 
-    return times;
+    return schedules;
   }
 
   /**
    * @returns {Promise<Date>}
    */
   async getDataTimestamp() {
-    await this.#ensureDataLoaded();
+    await this.#ensureMetadataLoaded();
     return new Date(this.#metadata.timestamp);
+  }
+
+  #isDataLoaded = false;
+  async #ensureDataLoaded() {
+    if (this.#isDataLoaded) return;
+    const response = await fetch(`${this.cdn}/data/jadwal-sholat.bin`);
+    this.#buffer = new Uint16Array(await response.arrayBuffer());
+    this.#isDataLoaded = true;
+  }
+
+  #isMetadataLoaded = false;
+  async #ensureMetadataLoaded() {
+    if (this.#isMetadataLoaded) return;
+    const response = await fetch(`${this.cdn}/data/jadwal-sholat.metadata`);
+    this.#metadata = this.#parseMetadata(await response.text());
+    this.#isMetadataLoaded = true;
   }
 
   /**
@@ -166,7 +180,7 @@ export class JadwalSholat {
    */
   #split16bitTo8bit(number) {
     return [
-      number & 0b0000000011111111,
+      (number & 0b0000000011111111),
       (number & 0b1111111100000000) >> 8,
     ];
   }
