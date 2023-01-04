@@ -73,20 +73,7 @@ provinceSelect.addEventListener('change', reloadRegencyOptions);
 
 const schedules = await jadwalSholat.getSchedules(selectedProvinceName, selectedRegencyName);
 
-const months = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'Mei',
-  'Jun',
-  'Jul',
-  'Agu',
-  'Sep',
-  'Okt',
-  'Nov',
-  'Des',
-];
+const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 const tbody = document.createElement('tbody');
 
@@ -112,3 +99,12 @@ const scheduleTable = document.getElementById('schedule-table');
 const placeholderTbody = document.getElementById('schedule-tbody-placeholder');
 
 scheduleTable.replaceChild(tbody, placeholderTbody);
+
+/** @type {HTMLTimeElement} */
+const time = document.getElementById('data-timestamp');
+const dataTimestamp = await jadwalSholat.getDataTimestamp();
+time.value = dataTimestamp.toISOString();
+time.textContent = dataTimestamp.toLocaleString();
+
+const tfoot = document.querySelector('tfoot');
+tfoot.classList.remove('d-none');

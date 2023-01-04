@@ -17,8 +17,8 @@ export class JadwalSholat {
   async #ensureDataLoaded() {
     if (this.#isDataLoaded) return;
     const [binResp, metaResp] = await Promise.all([
-      fetch(`${this.cdn}/data/jadwal-sholat.compact.bin`),
-      fetch(`${this.cdn}/data/jadwal-sholat.compact.metadata`),
+      fetch(`${this.cdn}/data/jadwal-sholat.bin`),
+      fetch(`${this.cdn}/data/jadwal-sholat.metadata`),
     ]);
     this.#buffer = new Uint16Array(await binResp.arrayBuffer());
     this.#metadata = this.#parseMetadata(await metaResp.text());
@@ -114,13 +114,24 @@ export class JadwalSholat {
   }
 
   /**
+   * @returns {Promise<Date>}
+   */
+  async getDataTimestamp() {
+    await this.#ensureDataLoaded();
+    return new Date(this.#metadata.timestamp);
+  }
+
+  /**
    * @param {string} raw
    * @returns {Metadata}
    */
   #parseMetadata(raw) {
+    const lines = raw.split('\n');
+
+    const [timestamp] = lines.shift()?.split('\t') ?? [];
+
     /** @type {Array<Province>} */
-    const provinces = raw
-      .split('\n')
+    const provinces = lines
       .map((line) => {
         const [name, regenciesRaw] = line.split(':');
         /** @type {Array<Regency>} */
@@ -134,7 +145,8 @@ export class JadwalSholat {
           regencies,
         }
       });
-    return { provinces };
+
+    return { timestamp: parseInt(timestamp, 10), provinces };
   }
 
   /**
@@ -186,6 +198,7 @@ export class JadwalSholat {
 
 /**
  * @typedef {object} Metadata
+ * @property {number} timestamp
  * @property {Array<Province>} provinces
  */
 

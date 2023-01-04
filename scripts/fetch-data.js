@@ -1,3 +1,5 @@
+// @ts-check
+
 import fs from 'fs';
 import path from 'path';
 import url from 'url';
@@ -5,8 +7,21 @@ import puppeteer from 'puppeteer';
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 
-function sleep(duration) {
-  return new Promise((resolve) => setTimeout(resolve, duration));
+/**
+ * @typedef {object} Schedule
+ * @property {string} province
+ * @property {string} regency
+ * @property {number} date
+ * @property {number} month
+ * @property {string} name
+ * @property {string} time
+ */
+
+/**
+ * @param {number} duration
+ */
+async function sleep(duration) {
+  await new Promise((resolve) => setTimeout(resolve, duration));
 }
 
 const browser = await puppeteer.launch({
@@ -26,11 +41,12 @@ await page.waitForNetworkIdle();
 const provinces = await page.evaluate(() => {
   return Array.from(document.querySelectorAll('.input-field:nth-child(1) select option'))
     .map((option) => {
-      return option.textContent;
+      return option.textContent ?? '';
     });
 });
 
-const times = [];
+/** @type {Array<Schedule>} */
+const schedules = [];
 
 for (const [provinceIndex, province] of provinces.entries()) {
   /** Lewati provinsi "PUSAT", tidak jalan */
@@ -45,7 +61,7 @@ for (const [provinceIndex, province] of provinces.entries()) {
   const regencies = await page.evaluate(() => {
     return Array.from(document.querySelectorAll('.input-field:nth-child(2) select option'))
       .map((option) => {
-        return option.textContent;
+        return option.textContent ?? '';
       });
   });
 
@@ -64,18 +80,20 @@ for (const [provinceIndex, province] of provinces.entries()) {
        * await page.click('#btn_search');
        */
       await page.evaluate(() => {
+        // @ts-ignore
         click = true;
+        // @ts-ignore
         loadjadwalshalat();
       });
       await page.waitForNetworkIdle();
 
-      /** @type {Array<string>} */
+      /** @type {Array<Schedule>} */
       const capturedTimes = await page.evaluate((province, regency, monthIndex) => {
         const timeNames = ['imsak', 'subuh', 'terbit', 'duha', 'zuhur', 'asar', 'magrib', 'isya'];
         return Array.from(document.querySelectorAll('div.jadwalshalat.card'))
           .map((div, dateIndex) => {
             return Array.from(div.querySelectorAll('span.waktu'))
-              .map((span) => span.textContent)
+              .map((span) => span.textContent ?? '')
               .map((time, index) => {
                 return {
                   province,
@@ -90,7 +108,7 @@ for (const [provinceIndex, province] of provinces.entries()) {
           .flat();
       }, province, regency, monthIndex);
 
-      times.push(...capturedTimes);
+      schedules.push(...capturedTimes);
     }
   }
 }
@@ -101,4 +119,7 @@ if (fs.existsSync(filePath)) {
   fs.unlinkSync(filePath);
 }
 
-fs.writeFileSync(filePath, JSON.stringify(times, null, 2), { encoding: 'utf8' });
+fs.writeFileSync(filePath, JSON.stringify({
+  timestamp: Date.now(),
+  schedules,
+}), { encoding: 'utf8' });

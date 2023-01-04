@@ -5,6 +5,7 @@ import path from 'path';
 import url from 'url';
 
 /** @typedef {import('../src/index.js').Metadata} Metadata */
+/** @typedef {import('./fetch-data.js').Schedule} Schedule */
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 
@@ -43,33 +44,23 @@ function compactTimesBinary(times) {
   return [
     times[0] | (times[1] << 6) | (((times[2] & 0b111100) >> 2) << 12),
     (times[2] & 0b000011) | (times[3] << 2) | (times[4] << 8) | (((times[5] & 0b110000) >> 4) << 14),
-    (times[5] & 0b001111) | (times[6] << 4) | times[7],
+    (times[5] & 0b001111) | (times[6] << 4) | (times[7] << 10),
     times[8] | (times[9] << 6) | (((times[10] & 0b111100) >> 2) << 12),
     (times[10] & 0b000011) | (times[11] << 2) | (times[12] << 8) | (((times[13] & 0b110000) >> 4) << 14),
-    (times[13] & 0b001111) | (times[14] << 4) | times[15],
+    (times[13] & 0b001111) | (times[14] << 4) | (times[15] << 10),
   ];
 }
 
-/**
- * @typedef {object} Time
- * @property {string} province
- * @property {string} regency
- * @property {number} date
- * @property {number} month
- * @property {string} name
- * @property {string} time
- */
-
-/** @type {Array<Time>} */
-const times = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/jadwal-sholat.json'), { encoding: 'utf8' }));
+/** @type {{ timestamp: number, schedules: Array<Schedule> }} */
+const { timestamp, schedules } = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/jadwal-sholat.json'), { encoding: 'utf8' }));
 
 /** @type {{ [locationGroup: number]: { [dateGroup: number]: Array<number> } }} */
 const groupedCompactTimes = {};
 
 /** @type {Metadata} */
-const metadata = { provinces: [] };
+const metadata = { timestamp, provinces: [] };
 
-times.forEach(({ province: provinceName, regency: regencyName, date, month, time }) => {
+schedules.forEach(({ province: provinceName, regency: regencyName, date, month, time }) => {
   let province = metadata.provinces.find((province) => province.name === provinceName);
   if (province === undefined) {
     province = { name: provinceName, regencies: [] };
@@ -129,14 +120,15 @@ const compactTimes = metadata.provinces
   .flat();
 
 const timeBuffer = new Uint16Array(compactTimes);
-const metadataRaw = metadata.provinces
-  .map((province) => {
+const metadataRaw = [
+  `${timestamp}`,
+  ...metadata.provinces.map((province) => {
     const regencies = province.regencies
       .map((regency) => regency.name)
       .join('\t')
     return `${province.name}:${regencies}`;
-  })
-  .join('\n');
+  }),
+].join('\n');
 
-fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.compact.bin'), timeBuffer);
-fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.compact.metadata'), metadataRaw, { encoding: 'utf8' });
+fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.bin'), timeBuffer);
+fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.metadata'), metadataRaw, { encoding: 'utf8' });
