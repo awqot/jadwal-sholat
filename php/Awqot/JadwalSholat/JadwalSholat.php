@@ -70,37 +70,87 @@ class JadwalSholat
   ) {
   }
 
-  public function getProvinces()
-  {
-    return array_values($this->metadata->provinces);
-  }
-
-  public function getRegencies(string $province)
-  {
-    $provinceIndex = (int) array_search($province, $this->metadata->provinces);
-
-    if ($provinceIndex === false) {
-      throw new Exception('Province not found');
-    }
-
-    return array_values($this->metadata->regencies[$provinceIndex]);
-  }
-
+  /**
+   * @return array<Schedule>
+   */
   public function getSchedules(string $province, string $regency)
   {
-    $provinceIndex = (int) array_search($province, $this->metadata->provinces);
+    [$locationContentWidth, $locationContentBeginAt] = $this->getLocationContentCursor($province, $regency);
 
-    if ($provinceIndex === false) {
-      throw new Exception('Province not found');
+    $dateMonthMetadataWidth = 1 * 2;
+    $dateMonthGroupWidth = 7 * 2;
+    $dateMonthGroupLength = $locationContentWidth / $dateMonthGroupWidth;
+    $dateMonthContentWidth = $dateMonthGroupWidth - $dateMonthMetadataWidth;
+
+    $schedules = [];
+
+    for ($index = 0; $index < $dateMonthGroupLength; $index++) {
+      $beginReadAt = $locationContentBeginAt + ($index * $dateMonthGroupWidth);
+      $date = (int) ord($this->buffer[$beginReadAt]);
+      $month = (int) ord($this->buffer[$beginReadAt + 1]);
+      $dateMonthBuffer = substr(
+        $this->buffer,
+        $beginReadAt + $dateMonthMetadataWidth, /** remove date month data */
+        $dateMonthContentWidth,
+      );
+      $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
+      array_push($schedules, new Schedule($date, $month, [
+        new Time("Imsya", $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
+        new Time("Subuh", $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
+        new Time("Terbit", $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
+        new Time("Duha", $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
+        new Time("Dzuhur", $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
+        new Time("Ashar", $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
+        new Time("Magrib", $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
+        new Time("Isya", $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
+      ]));
     }
 
-    $regencyIndex = (int) array_search($regency, $this->metadata->regencies[$provinceIndex]);
+    return $schedules;
+  }
 
-    if ($regencyIndex === false) {
-      throw new Exception('Regency not found');
+  /**
+   * @return array<Time>
+   */
+  public function getTimes(string $province, string $regency, int $date, int $month)
+  {
+    [$locationContentWidth, $locationContentBeginAt] = $this->getLocationContentCursor($province, $regency);
+
+    $dateMonthMetadataWidth = 1 * 2;
+    $dateMonthGroupWidth = 7 * 2;
+    $dateMonthGroupLength = $locationContentWidth / $dateMonthGroupWidth;
+    $dateMonthContentWidth = $dateMonthGroupWidth - $dateMonthMetadataWidth;
+
+    for ($index = 0; $index < $dateMonthGroupLength; $index++) {
+      $beginReadAt = $locationContentBeginAt + ($index * $dateMonthGroupWidth);
+      if (ord($this->buffer[$beginReadAt]) === $date && $month === ord($this->buffer[$beginReadAt + 1])) {
+        $dateMonthBuffer = substr(
+          $this->buffer,
+          $beginReadAt + $dateMonthMetadataWidth, /** remove date month data */
+          $dateMonthContentWidth,
+        );
+
+        $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
+
+        return [
+          new Time("Imsya", $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
+          new Time("Subuh", $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
+          new Time("Terbit", $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
+          new Time("Duha", $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
+          new Time("Dzuhur", $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
+          new Time("Ashar", $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
+          new Time("Magrib", $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
+          new Time("Isya", $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
+        ];
+      }
     }
 
-    $location = static::join8bitTo16bit($provinceIndex, $regencyIndex);
+    throw new Exception("Times not found");
+  }
+
+  private function getLocationContentCursor(string $province, string $regency)
+  {
+    $location = $this->metadata->getLocation($province, $regency);
 
     $locationGroupWidth = 2556 * 2;
     $locationGroupLength = strlen($this->buffer) / $locationGroupWidth;
@@ -123,42 +173,12 @@ class JadwalSholat
     }
 
     if ($locationGroupBeginAt === null) {
-      throw new Exception("Schedule not found");
+      throw new Exception("Schedules not found");
     }
 
-    $dateMonthMetadataWidth = 1 * 2;
-    $dateMonthGroupWidth = 7 * 2;
-    $dateMonthGroupLength = $locationContentWidth / $dateMonthGroupWidth;
-    $dateMonthContentWidth = $dateMonthGroupWidth - $dateMonthMetadataWidth;
-
-    $schedules = [];
-
-    for ($index = 0; $index < $dateMonthGroupLength; $index++) {
-      $beginReadAt = $locationContentBeginAt + ($index * $dateMonthGroupWidth);
-      $date = (int) ord($this->buffer[$beginReadAt]);
-      $month = (int) ord($this->buffer[$beginReadAt + 1]);
-      $dateMonthBuffer = substr(
-        $this->buffer,
-        $beginReadAt + $dateMonthMetadataWidth, /** remove date month data */
-        $dateMonthContentWidth,
-      );
-      $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
-      array_push($schedules, (object) [
-        "date" => $date,
-        "month" => $month,
-        "times" => [
-          (object) [ "label" => "Imsya", "hour" => $pairOfHourAndMinute[0], "minute" => $pairOfHourAndMinute[1] ],
-          (object) [ "label" => "Subuh", "hour" => $pairOfHourAndMinute[2], "minute" => $pairOfHourAndMinute[3] ],
-          (object) [ "label" => "Terbit", "hour" => $pairOfHourAndMinute[4], "minute" => $pairOfHourAndMinute[5] ],
-          (object) [ "label" => "Duha", "hour" => $pairOfHourAndMinute[6], "minute" => $pairOfHourAndMinute[7] ],
-          (object) [ "label" => "Dzuhur", "hour" => $pairOfHourAndMinute[8], "minute" => $pairOfHourAndMinute[9] ],
-          (object) [ "label" => "Ashar", "hour" => $pairOfHourAndMinute[10], "minute" => $pairOfHourAndMinute[11] ],
-          (object) [ "label" => "Magrib", "hour" => $pairOfHourAndMinute[12], "minute" => $pairOfHourAndMinute[13] ],
-          (object) [ "label" => "Isya", "hour" => $pairOfHourAndMinute[14], "minute" => $pairOfHourAndMinute[15] ],
-        ],
-      ]);
-    }
-
-    return $schedules;
+    return [
+      $locationContentWidth,
+      $locationContentBeginAt
+    ];
   }
 }

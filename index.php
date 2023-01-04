@@ -15,8 +15,8 @@ $metadata = Metadata::fromFile(
 
 $jadwalSholat = JadwalSholat::default();
 
-$provinces = $jadwalSholat->getProvinces();
-$regencies = $jadwalSholat->getRegencies($selectedProvince);
+$provinces = $metadata->getProvinces();
+$regencies = $metadata->getRegencies($selectedProvince);
 $schedules = $jadwalSholat->getSchedules($selectedProvince, $selectedRegency);
 
 $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];

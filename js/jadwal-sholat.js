@@ -33,11 +33,8 @@ export class JadwalSholat {
    * @param {string} provinceName
    * @param {string} regencyName
    */
-  async getSchedules(provinceName, regencyName) {
-    await Promise.all([
-      this.#ensureDataLoaded(),
-      this.#ensureMetadataLoaded(),
-    ]);
+  async getLocation(provinceName, regencyName) {
+    await this.#ensureMetadataLoaded();
 
     const provinceIndex = this.#metadata.provinces
       .findIndex((province) => province.name === provinceName);
@@ -53,34 +50,24 @@ export class JadwalSholat {
       throw new Error('Regency not found');
     }
 
-    const location = this.#join8bitTo16bit(provinceIndex, regencyIndex);
-    
-    const locationGroupWidth = 2556;
-    const locationGroupsLength = this.#buffer.length / 2556;
-    /** @type {number|undefined} */
-    let locationGroupBeginAt = undefined;
-    const locationMetadataWidth = 1;
-    /** @type {number|undefined} */
-    let locationContentBeginAt = undefined;
-    const locationContentWidth = locationGroupWidth - locationMetadataWidth;
+    return this.#join8bitTo16bit(provinceIndex, regencyIndex);
+  }
 
-    for (let index = 0; index < locationGroupsLength; index++) {
-      const beginReadAt = index * locationGroupWidth;
-      if (this.#buffer.at(beginReadAt) === location) {
-        locationGroupBeginAt = beginReadAt;
-        locationContentBeginAt = beginReadAt + locationMetadataWidth;
-        break;
-      }
-    }
-
-    if (locationGroupBeginAt === undefined || locationContentBeginAt === undefined) {
-      throw new Error('Schedule not found');
-    }
+  /**
+   * @param {string} provinceName
+   * @param {string} regencyName
+   */
+  async getSchedules(provinceName, regencyName) {
+    const [{ locationContentWidth, locationContentBeginAt }] = await Promise.all([
+      this.#getLocationContentCuror(provinceName, regencyName),
+      this.#ensureDataLoaded(),
+    ]);
 
     const dateMonthMetadataWidth = 1;
     const dateMonthGroupWidth = 7;
     const dateMonthGroupLength = locationContentWidth / dateMonthGroupWidth;
 
+    /** @type {Array<Schedule>} */
     const schedules = [];
 
     for (let index = 0; index < dateMonthGroupLength; index++) {
@@ -109,6 +96,83 @@ export class JadwalSholat {
     }
 
     return schedules;
+  }
+
+  /**
+   * @param {string} provinceName
+   * @param {string} regencyName
+   * @param {number} month
+   * @param {number} date
+   */
+  async getTimes(provinceName, regencyName, month, date) {
+    const [{ locationContentWidth, locationContentBeginAt }] = await Promise.all([
+      this.#getLocationContentCuror(provinceName, regencyName),
+      this.#ensureDataLoaded(),
+    ]);
+
+    const dateMonthMetadataWidth = 1;
+    const dateMonthGroupWidth = 7;
+    const dateMonthGroupLength = locationContentWidth / dateMonthGroupWidth;
+
+    for (let index = 0; index < dateMonthGroupLength; index++) {
+      const beginReadAt = locationContentBeginAt + (index * dateMonthGroupWidth);
+      const dateMonth = this.#buffer.at(beginReadAt) ?? 0;
+      const dateMonthBuffer = Array.from(this.#buffer.slice(
+        beginReadAt + dateMonthMetadataWidth, /** remove date month data */
+        beginReadAt + dateMonthGroupWidth,
+      ));
+      const [_date, _month] = this.#split16bitTo8bit(dateMonth);
+      if (date === _date && month === _month) {
+        const pairOfHourAndMinute = this.#decompactTimesBinary(Array.from(dateMonthBuffer));
+        return [
+          { label: 'Imsya', hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
+          { label: 'Subuh', hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
+          { label: 'Terbit', hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
+          { label: 'Duha', hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
+          { label: 'Dzuhur', hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
+          { label: 'Ashar', hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
+          { label: 'Magrib', hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
+          { label: 'Isya', hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
+        ];
+      }
+    }
+
+    throw new Error('Time not found');
+  }
+
+  /**
+   * @param {string} provinceName
+   * @param {string} regencyName
+   */
+  async #getLocationContentCuror(provinceName, regencyName) {
+    const [location] = await Promise.all([
+      this.getLocation(provinceName, regencyName),
+      this.#ensureDataLoaded(),
+    ]);
+
+    const locationGroupWidth = 2556;
+    const locationGroupsLength = this.#buffer.length / 2556;
+    /** @type {number|undefined} */
+    let locationGroupBeginAt = undefined;
+    const locationMetadataWidth = 1;
+    /** @type {number|undefined} */
+    let locationContentBeginAt = undefined;
+    const locationContentWidth = locationGroupWidth - locationMetadataWidth;
+
+    for (let index = 0; index < locationGroupsLength; index++) {
+      const beginReadAt = index * locationGroupWidth;
+      if (this.#buffer.at(beginReadAt) === location) {
+        locationGroupBeginAt = beginReadAt;
+        locationContentBeginAt = beginReadAt + locationMetadataWidth;
+        break;
+      }
+    }
+
+    if (locationGroupBeginAt === undefined || locationContentBeginAt === undefined) {
+      throw new Error('Schedule not found');
+    }
+
+    return { locationContentWidth, locationContentBeginAt };
   }
 
   /**
@@ -209,6 +273,20 @@ export class JadwalSholat {
     ];
   }
 }
+
+/**
+ * @typedef {object} Schedule
+ * @property {number} date
+ * @property {number} month
+ * @property {Array<Time>} times
+ */
+
+/**
+ * @typedef {object} Time
+ * @property {string} label
+ * @property {number} hour
+ * @property {number} minute
+ */
 
 /**
  * @typedef {object} Metadata
