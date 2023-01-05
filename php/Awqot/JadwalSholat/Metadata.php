@@ -43,6 +43,17 @@ class Metadata
     return $first | ($second << 8);
   }
 
+  /**
+   * @param int $number 16 bit unsigned integer
+   */
+  private static function split16bitTo8bit(int $number)
+  {
+    return [
+      ($number & 0b0000000011111111),
+      ($number & 0b1111111100000000) >> 8,
+    ];
+  }
+
   public function __construct(
     public readonly int $timestamp,
     public readonly array $provinces,
@@ -81,5 +92,25 @@ class Metadata
     }
 
     return static::join8bitTo16bit($provinceIndex, $regencyIndex);
+  }
+
+  /**
+   * @param int $location 16 bit unsigned integer
+   */
+  public function getProvince(int $location)
+  {
+    [$provinceIndex] = static::split16bitTo8bit($location);
+
+    return $this->provinces[$provinceIndex];
+  }
+
+  /**
+   * @param int $location 16 bit unsigned integer
+   */
+  public function getRegency(int $location)
+  {
+    [$provinceIndex, $regencyIndex] = static::split16bitTo8bit($location);
+
+    return $this->regencies[$provinceIndex][$regencyIndex];
   }
 }
