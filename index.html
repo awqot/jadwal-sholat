@@ -60,7 +60,7 @@
 
     <div class="card mt-3">
       <div class="card-body">
-        <form method="GET">
+        <form name="location-form" method="GET">
           <div class="row">
             <div class="col-12 col-md-5">
               <div>
@@ -140,11 +140,13 @@
 
     const jadwalSholat = new JadwalSholat(location.origin + location.pathname.split('/').slice(0, -1).join('/'));
 
+
     /** ===== CONTEXT ===== */
 
     const query = new URLSearchParams(location.search);
     const selectedProvinceName = query.get('province') ?? 'DKI JAKARTA';
     const selectedRegencyName = query.get('regency') ?? 'KOTA JAKARTA';
+
 
     /** ===== FORM ===== */
 
@@ -165,16 +167,15 @@
 
     provinceSelect.disabled = false;
 
+    /** @type {HTMLSelectElement} */
+    const regencySelect = document.querySelector('select[name="regency"]');
+
     let firstTimeRegencyLoad = true;
 
-    async function reloadRegencyOptions() {
-      /** @type {HTMLSelectElement} */
-      const regencySelect = document.querySelector('select[name="regency"]');
-
+    async function renderRegencyOptions() {
       regencySelect.disabled = true;
 
-      const selectedProvinceIndex = provinceSelect.selectedIndex;
-      const selectedProvinceName = provinceSelect.options.item(selectedProvinceIndex).value;
+      const selectedProvinceName = getSelectedValue(provinceSelect);
 
       const regencies = await jadwalSholat.getRegencies(selectedProvinceName);
 
@@ -201,41 +202,71 @@
       firstTimeRegencyLoad = false;
     }
 
-    await reloadRegencyOptions();
+    await renderRegencyOptions();
 
-    provinceSelect.addEventListener('change', reloadRegencyOptions);
+    provinceSelect.addEventListener('change', renderRegencyOptions);
+
+    document.forms.namedItem('location-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const queryString = new URLSearchParams(new FormData(event.target)).toString();
+      if (queryString !== location.search.slice(1)) {
+        history.pushState({ queryString }, '', `/index.html?${queryString}`);
+        await renderTable();
+      }
+    });
 
 
     /** ===== TABLE ===== */
 
-    const schedules = await jadwalSholat.getSchedules(selectedProvinceName, selectedRegencyName);
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-    const tbody = document.createElement('tbody');
-
-    for (const schedule of schedules) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.classList.add('text-center');
-      td.textContent = `${schedule.date.toString().padStart(2, '0')} ${months[schedule.month - 1]}`;
-      tr.appendChild(td);
-      for (const time of schedule.times) {
-        const td = document.createElement('td');
-        td.classList.add('text-center');
-        td.textContent = `${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}`;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
     /** @type {HTMLTableElement} */
     const scheduleTable = document.getElementById('schedule-table');
-
     /** @type {HTMLTableSectionElement} */
     const placeholderTbody = document.getElementById('schedule-tbody-placeholder');
+    const tbody = document.createElement('tbody');
 
+    async function renderTable() {
+      const schedules = await jadwalSholat.getSchedules(
+        getSelectedValue(provinceSelect) ?? selectedProvinceName,
+        getSelectedValue(regencySelect) ?? selectedRegencyName,
+      );
+
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+      while (tbody.firstChild instanceof Node) {
+        tbody.removeChild(tbody.firstChild);
+      }
+
+      for (const schedule of schedules) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.classList.add('text-center');
+        td.textContent = `${schedule.date.toString().padStart(2, '0')} ${months[schedule.month - 1]}`;
+        tr.appendChild(td);
+        for (const time of schedule.times) {
+          const td = document.createElement('td');
+          td.classList.add('text-center');
+          td.textContent = `${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}`;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    await renderTable();
     scheduleTable.replaceChild(tbody, placeholderTbody);
+
+    window.addEventListener('popstate', async () => {
+      const query = new URLSearchParams(location.search);
+      const selectedProvinceName = query.get('province') ?? 'DKI JAKARTA';
+      const selectedRegencyName = query.get('regency') ?? 'KOTA JAKARTA';
+
+      setSelectedValue(provinceSelect, selectedProvinceName);
+      setSelectedValue(regencySelect, selectedRegencyName);
+
+      scheduleTable.replaceChild(placeholderTbody, tbody);
+      await renderTable()
+      scheduleTable.replaceChild(tbody, placeholderTbody);
+    });
 
     /** @type {HTMLTimeElement} */
     const time = document.getElementById('data-timestamp');
@@ -245,6 +276,25 @@
 
     const tfoot = document.querySelector('tfoot');
     tfoot.classList.remove('d-none');
+
+
+    /** ===== TOOLS ===== */
+
+    /**
+     * @param {HTMLSelectElement} select
+     */
+    function getSelectedValue(select) {
+      return select.options.item(select.selectedIndex)?.value;
+    }
+
+    /**
+     * @param {HTMLSelectElement} select
+     */
+    function setSelectedValue(select, value) {
+      select.selectedIndex = Array.from(select.options).findIndex((option) => {
+        return option.value === value;
+      });
+    }
   </script>
 </body>
 
