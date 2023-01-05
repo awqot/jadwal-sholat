@@ -6,6 +6,15 @@ use Exception;
 
 class JadwalSholat
 {
+  const LABEL_IMSYA = "Imsya";
+  const LABEL_SUBUH = "Subuh";
+  const LABEL_TERBIT = "Terbit";
+  const LABEL_DUHA = "Duha";
+  const LABEL_DZUHUR = "Dzuhur";
+  const LABEL_ASHAR = "Ashar";
+  const LABEL_MAGRIB = "Magrib";
+  const LABEL_ISYA = "Isya";
+
   public static function default()
   {
     return JadwalSholat::fromFile(
@@ -95,14 +104,14 @@ class JadwalSholat
       );
       $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
       array_push($schedules, new Schedule($date, $month, [
-        new Time("Imsya", $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
-        new Time("Subuh", $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
-        new Time("Terbit", $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
-        new Time("Duha", $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
-        new Time("Dzuhur", $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
-        new Time("Ashar", $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
-        new Time("Magrib", $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
-        new Time("Isya", $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
+        new Time(JadwalSholat::LABEL_IMSYA, $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
+        new Time(JadwalSholat::LABEL_SUBUH, $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
+        new Time(JadwalSholat::LABEL_TERBIT, $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
+        new Time(JadwalSholat::LABEL_DUHA, $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
+        new Time(JadwalSholat::LABEL_DZUHUR, $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
+        new Time(JadwalSholat::LABEL_ASHAR, $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
+        new Time(JadwalSholat::LABEL_MAGRIB, $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
+        new Time(JadwalSholat::LABEL_ISYA, $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
       ]));
     }
 
@@ -133,14 +142,14 @@ class JadwalSholat
         $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
 
         return [
-          new Time("Imsya", $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
-          new Time("Subuh", $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
-          new Time("Terbit", $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
-          new Time("Duha", $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
-          new Time("Dzuhur", $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
-          new Time("Ashar", $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
-          new Time("Magrib", $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
-          new Time("Isya", $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
+          new Time(JadwalSholat::LABEL_IMSYA, $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
+          new Time(JadwalSholat::LABEL_SUBUH, $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
+          new Time(JadwalSholat::LABEL_TERBIT, $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
+          new Time(JadwalSholat::LABEL_DUHA, $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
+          new Time(JadwalSholat::LABEL_DZUHUR, $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
+          new Time(JadwalSholat::LABEL_ASHAR, $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
+          new Time(JadwalSholat::LABEL_MAGRIB, $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
+          new Time(JadwalSholat::LABEL_ISYA, $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
         ];
       }
     }

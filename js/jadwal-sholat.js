@@ -1,6 +1,15 @@
 // @ts-check
 
 export class JadwalSholat {
+  static get LABEL_IMSYA() { return "Imsya"; };
+  static get LABEL_SUBUH() { return "Subuh"; };
+  static get LABEL_TERBIT() { return "Terbit"; };
+  static get LABEL_DUHA() { return "Duha"; };
+  static get LABEL_DZUHUR() { return "Dzuhur"; };
+  static get LABEL_ASHAR() { return "Ashar"; };
+  static get LABEL_MAGRIB() { return "Magrib"; };
+  static get LABEL_ISYA() { return "Isya"; };
+
   /** @type {Metadata} */
   #metadata;
   /** @type {Uint16Array} */
@@ -105,14 +114,14 @@ export class JadwalSholat {
         date,
         month,
         times: [
-          { label: 'Imsya', hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
-          { label: 'Subuh', hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
-          { label: 'Terbit', hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
-          { label: 'Duha', hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
-          { label: 'Dzuhur', hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
-          { label: 'Ashar', hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
-          { label: 'Magrib', hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
-          { label: 'Isya', hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
+          { label: JadwalSholat.LABEL_IMSYA, hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
+          { label: JadwalSholat.LABEL_SUBUH, hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
+          { label: JadwalSholat.LABEL_TERBIT, hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
+          { label: JadwalSholat.LABEL_DUHA, hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
+          { label: JadwalSholat.LABEL_DZUHUR, hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
+          { label: JadwalSholat.LABEL_ASHAR, hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
+          { label: JadwalSholat.LABEL_MAGRIB, hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
+          { label: JadwalSholat.LABEL_ISYA, hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
         ],
       });
     }
@@ -147,14 +156,14 @@ export class JadwalSholat {
       if (date === _date && month === _month) {
         const pairOfHourAndMinute = this.#decompactTimesBinary(Array.from(dateMonthBuffer));
         return [
-          { label: 'Imsya', hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
-          { label: 'Subuh', hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
-          { label: 'Terbit', hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
-          { label: 'Duha', hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
-          { label: 'Dzuhur', hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
-          { label: 'Ashar', hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
-          { label: 'Magrib', hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
-          { label: 'Isya', hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
+          { label: JadwalSholat.LABEL_IMSYA, hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
+          { label: JadwalSholat.LABEL_SUBUH, hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
+          { label: JadwalSholat.LABEL_TERBIT, hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
+          { label: JadwalSholat.LABEL_DUHA, hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
+          { label: JadwalSholat.LABEL_DZUHUR, hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
+          { label: JadwalSholat.LABEL_ASHAR, hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
+          { label: JadwalSholat.LABEL_MAGRIB, hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
+          { label: JadwalSholat.LABEL_ISYA, hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
         ];
       }
     }
