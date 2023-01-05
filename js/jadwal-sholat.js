@@ -54,6 +54,28 @@ export class JadwalSholat {
   }
 
   /**
+   * @param {number} location
+   */
+  async getProvince(location) {
+    await this.#ensureMetadataLoaded();
+
+    const [provinceIndex] = this.#split16bitTo8bit(location);
+
+    return this.#metadata.provinces[provinceIndex];
+  }
+
+  /**
+   * @param {number} location
+   */
+  async getRegency(location) {
+    await this.#ensureMetadataLoaded();
+
+    const [provinceIndex, regencyIndex] = this.#split16bitTo8bit(location);
+
+    return this.#metadata.provinces[provinceIndex]?.regencies[regencyIndex].name;
+  }
+
+  /**
    * @param {string} provinceName
    * @param {string} regencyName
    */
