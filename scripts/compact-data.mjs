@@ -20,19 +20,6 @@ const max6bit = 0b111111;
 const max8bit = 0b11111111;
 
 /**
- * Little-endian
- * @param {number} first
- * @param {number} second
- */
-function join8bitTo16bit(first, second) {
-  if (first > max8bit || second > max8bit) {
-    console.warn(first, second);
-    throw new Error('Data lebih besar dari 8 bit');
-  }
-  return first | (second << 8);
-}
-
-/**
  * @param {Array<number>} times pasangan jam dan menit diasumsikan 6 bit integer.
  */
 function compactTimesADayToBinary(times) {
@@ -77,7 +64,7 @@ const compactTimeGroupMap = {};
 /** @type {Metadata} */
 const metadata = { timestamp, timePaddings: [], provinces: [] };
 
-schedules.forEach(({ province: provinceName, regency: regencyName, date, month, time }) => {
+schedules.forEach(({ province: provinceName, regency: regencyName, month, date, hour, minute }) => {
   let province = metadata.provinces.find((province) => province.name === provinceName);
   if (province === undefined) {
     province = { name: provinceName, regencies: [] };
@@ -91,8 +78,6 @@ schedules.forEach(({ province: provinceName, regency: regencyName, date, month, 
     province.regencies.push(regency);
   }
   const regencyIndex = province.regencies.indexOf(regency);
-
-  const [hour, minute] = time.split(':').map((str) => parseInt(str, 10));
 
   /** index mulai dari 1 agar kab/kot di provinsi pertama tidak 0 */
   const location = (provinceIndex + 1) * regencyIndex;
