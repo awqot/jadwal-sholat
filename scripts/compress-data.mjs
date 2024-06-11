@@ -1,6 +1,7 @@
 // @ts-check
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { Stats } from 'node:fs';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const __dirname = new URL('.', import.meta.url).pathname;
@@ -11,7 +12,7 @@ async function main() {
     join(__dirname, '../data/jadwal-sholat.json'),
     join(__dirname, '../data/jadwal-sholat.metadata'),
   ];
-  
+
   for (const file of files) {
     const cs = new CompressionStream('gzip');
     const writer = cs.writable.getWriter();

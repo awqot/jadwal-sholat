@@ -1,0 +1,32 @@
+meta:
+  id: awqot_jadwal_sholat
+  title: Jadwal Sholat
+  endian: be
+  encoding: utf-8
+
+seq:
+  - id: magic
+    contents: [65, 87, 81, 84, 83, 72, 76, 84]
+  - id: version
+    type: u2
+  - id: num_of_regencies
+    type: u2
+  - id: num_of_time_diffs
+    size: u2
+  - id: regency_schedules
+    type: regency_schedule
+    repeat:
+      for: num_of_regencies
+
+types:
+  regency_schedule:
+    seq:
+      - id: base_minute_offset
+        type: u2
+      - id: time_diffs
+        type: b2
+        repeat:
+          for: num_of_time_diffs
+          type: time_diff
+
+  
