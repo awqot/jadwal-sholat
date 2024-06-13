@@ -4,5 +4,9 @@
     "target": "ESNext",
     "moduleResolution": "Node",
     "lib": ["ESNext.Array", "DOM"]
-  }
+  },
+  "include": [
+    "js/*.js",
+    "*.js"
+  ]
 }

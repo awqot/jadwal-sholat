@@ -1,129 +1,166 @@
 // @ts-check
 
 export class JadwalSholat {
-  static get LABEL_IMSYA() { return "Imsya"; };
-  static get LABEL_SUBUH() { return "Subuh"; };
-  static get LABEL_TERBIT() { return "Terbit"; };
-  static get LABEL_DUHA() { return "Duha"; };
-  static get LABEL_DZUHUR() { return "Dzuhur"; };
-  static get LABEL_ASHAR() { return "Ashar"; };
-  static get LABEL_MAGRIB() { return "Magrib"; };
-  static get LABEL_ISYA() { return "Isya"; };
+  static get LABEL_IMSYA() { return 'Imsya'; };
+  static get LABEL_SUBUH() { return 'Subuh'; };
+  static get LABEL_TERBIT() { return 'Terbit'; };
+  static get LABEL_DUHA() { return 'Duha'; };
+  static get LABEL_DZUHUR() { return 'Dzuhur'; };
+  static get LABEL_ASHAR() { return 'Ashar'; };
+  static get LABEL_MAGRIB() { return 'Magrib'; };
+  static get LABEL_ISYA() { return 'Isya'; };
 
-  /** @type {Metadata} */
-  #metadata;
-  /** @type {Uint16Array} */
-  #buffer;
+  /** @type {string} */
+  #cdn;
+
+  /** @type {Date} */
+  #date;
+
+  /** @type {Array<string>} */
+  #provinces;
+
+  /** @type {Map<string, Map<string, number>>} */
+  #provinceMap;
+
+  /**
+   * regencyIndex -> month -> date -> prayerTimeIndex -> minuteOfDay
+   * @type {Map<number, Map<number, Map<number, Map<number, number>>>>}
+   */
+  #scheduleMap;
 
   /**
    * @param {string} cdn
    */
   constructor(cdn) {
-    this.cdn = cdn;
+    this.#cdn = cdn;
   }
 
+  /**
+   * @returns {Promise<Date>}
+   */
+  async getDataTimestamp() {
+    await this.#ensureLoaded();
+
+    return new Date(this.#date);
+  }
+
+  /**
+   * @returns {Promise<Array<string>>}
+   */
   async getProvinces() {
-    await this.#ensureMetadataLoaded();
-    return this.#metadata.provinces;
+    await this.#ensureLoaded();
+
+    return this.#provinces.slice();
   }
 
   /**
    * @param {string} provinceName
+   * @returns {Promise<Array<String>>}
    */
   async getRegencies(provinceName) {
-    await this.#ensureMetadataLoaded();
-    return this.#metadata.provinces
-      .find((province) => province.name === provinceName)
-      ?.regencies
-      .map((regency) => regency.name);
+    await this.#ensureLoaded();
+
+    const regencyMap = this.#provinceMap.get(provinceName);
+
+    if (!(regencyMap instanceof Map)) {
+      throw new Error(`Province "${provinceName}" not found`);
+    }
+
+    return Array.from(regencyMap.keys());
   }
 
   /**
    * @param {string} provinceName
    * @param {string} regencyName
-   */
-  async getLocation(provinceName, regencyName) {
-    await this.#ensureMetadataLoaded();
-
-    const provinceIndex = this.#metadata.provinces
-      .findIndex((province) => province.name === provinceName);
-
-    if (provinceIndex === -1) {
-      throw new Error('Province not found');
-    }
-
-    const regencyIndex = this.#metadata.provinces[provinceIndex].regencies
-      .findIndex((regency) => regency.name === regencyName);
-
-    if (regencyIndex === -1) {
-      throw new Error('Regency not found');
-    }
-
-    return this.#join8bitTo16bit(provinceIndex, regencyIndex);
-  }
-
-  /**
-   * @param {number} location
-   */
-  async getProvince(location) {
-    await this.#ensureMetadataLoaded();
-
-    const [provinceIndex] = this.#split16bitTo8bit(location);
-
-    return this.#metadata.provinces[provinceIndex];
-  }
-
-  /**
-   * @param {number} location
-   */
-  async getRegency(location) {
-    await this.#ensureMetadataLoaded();
-
-    const [provinceIndex, regencyIndex] = this.#split16bitTo8bit(location);
-
-    return this.#metadata.provinces[provinceIndex]?.regencies[regencyIndex].name;
-  }
-
-  /**
-   * @param {string} provinceName
-   * @param {string} regencyName
+   * @returns {Promise<Array<Schedule>>}
    */
   async getSchedules(provinceName, regencyName) {
-    const [{ locationContentWidth, locationContentBeginAt }] = await Promise.all([
-      this.#getLocationContentCursor(provinceName, regencyName),
-      this.#ensureDataLoaded(),
-    ]);
+    await this.#ensureLoaded();
 
-    const dateMonthMetadataWidth = 1;
-    const dateMonthGroupWidth = 7;
-    const dateMonthGroupLength = locationContentWidth / dateMonthGroupWidth;
+    const regencyMap = this.#provinceMap.get(provinceName);
+
+    if (!(regencyMap instanceof Map)) {
+      throw new Error(`Province "${provinceName}" not found`);
+    }
+
+    const regencyIndex = regencyMap.get(regencyName);
+
+    if (typeof regencyIndex !== 'number') {
+      throw new Error(`Invalid regency index for "${regencyName}"`);
+    }
+
+    const monthMap = this.#scheduleMap.get(regencyIndex);
+
+    if (!(monthMap instanceof Map)) {
+      throw new Error(`Invalid month map for regency index ${regencyIndex}`);
+    }
 
     /** @type {Array<Schedule>} */
     const schedules = [];
 
-    for (let index = 0; index < dateMonthGroupLength; index++) {
-      const beginReadAt = locationContentBeginAt + (index * dateMonthGroupWidth);
-      const dateMonth = this.#buffer.at(beginReadAt) ?? 0;
-      const dateMonthBuffer = Array.from(this.#buffer.slice(
-        beginReadAt + dateMonthMetadataWidth, /** remove date month data */
-        beginReadAt + dateMonthGroupWidth,
-      ));
-      const [date, month] = this.#split16bitTo8bit(dateMonth);
-      const pairOfHourAndMinute = this.#decompactTimesBinary(Array.from(dateMonthBuffer));
-      schedules.push({
-        date,
-        month,
-        times: [
-          { label: JadwalSholat.LABEL_IMSYA, hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
-          { label: JadwalSholat.LABEL_SUBUH, hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
-          { label: JadwalSholat.LABEL_TERBIT, hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
-          { label: JadwalSholat.LABEL_DUHA, hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
-          { label: JadwalSholat.LABEL_DZUHUR, hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
-          { label: JadwalSholat.LABEL_ASHAR, hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
-          { label: JadwalSholat.LABEL_MAGRIB, hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
-          { label: JadwalSholat.LABEL_ISYA, hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
-        ],
-      });
+    const months = Array.from(monthMap.keys());
+
+    for (const month of months) {
+      const dateMap = monthMap.get(month);
+
+      if (!(dateMap instanceof Map)) {
+        throw new Error(`Invalid date map for month ${month}`);
+      }
+
+      const dates = Array.from(dateMap.keys());
+
+      for (const date of dates) {
+        const timeMap = dateMap.get(date);
+
+        if (!(timeMap instanceof Map)) {
+          throw new Error(`Invalid time map for date ${date}`);
+        }
+
+        const times = Array.from(timeMap.entries())
+          .map(function ([prayerTimeIndex, minuteOfDay]) {
+            let label;
+            switch (prayerTimeIndex) {
+              case 1:
+                label = JadwalSholat.LABEL_SUBUH;
+                break;
+              case 2:
+                label = JadwalSholat.LABEL_TERBIT;
+                break;
+              case 3:
+                label = JadwalSholat.LABEL_DUHA;
+                break;
+              case 4:
+                label = JadwalSholat.LABEL_DZUHUR;
+                break;
+              case 5:
+                label = JadwalSholat.LABEL_ASHAR;
+                break;
+              case 6:
+                label = JadwalSholat.LABEL_MAGRIB;
+                break;
+              case 7:
+                label = JadwalSholat.LABEL_ISYA;
+                break;
+              default:
+                throw new Error(`Invalid prayer time index ${prayerTimeIndex}`);
+            }
+
+            const hour = Math.floor(minuteOfDay / 60);
+            const minute = minuteOfDay % 60;
+
+            return {
+              label,
+              hour,
+              minute,
+            };
+          });
+
+        schedules.push({
+          month,
+          date,
+          times,
+        });
+      }
     }
 
     return schedules;
@@ -134,186 +171,277 @@ export class JadwalSholat {
    * @param {string} regencyName
    * @param {number} month
    * @param {number} date
+   * @returns {Promise<Array<Time>>}
    */
   async getTimes(provinceName, regencyName, month, date) {
-    const [{ locationContentWidth, locationContentBeginAt }] = await Promise.all([
-      this.#getLocationContentCursor(provinceName, regencyName),
+    await this.#ensureLoaded();
+
+    const schedules = await this.getSchedules(provinceName, regencyName);
+
+    const schedule = schedules.find(function (schedule) {
+      return schedule.month === month && schedule.date === date;
+    });
+
+    if (typeof schedule === 'undefined') {
+      throw new Error(`Schedule not found for ${month}-${date}`);
+    }
+
+    return schedule.times;
+  }
+
+  get #metadataUrl() {
+    return `${this.#cdn}/data/jadwal-sholat.metadata.gz`;
+  }
+
+  get #dataUrl() {
+    return `${this.#cdn}/data/jadwal-sholat.bin.gz`;
+  }
+
+  async #ensureLoaded() {
+    await Promise.all([
+      this.#ensureMetadataLoaded(),
       this.#ensureDataLoaded(),
     ]);
-
-    const dateMonthMetadataWidth = 1;
-    const dateMonthGroupWidth = 7;
-    const dateMonthGroupLength = locationContentWidth / dateMonthGroupWidth;
-
-    for (let index = 0; index < dateMonthGroupLength; index++) {
-      const beginReadAt = locationContentBeginAt + (index * dateMonthGroupWidth);
-      const dateMonth = this.#buffer.at(beginReadAt) ?? 0;
-      const dateMonthBuffer = Array.from(this.#buffer.slice(
-        beginReadAt + dateMonthMetadataWidth, /** remove date month data */
-        beginReadAt + dateMonthGroupWidth,
-      ));
-      const [_date, _month] = this.#split16bitTo8bit(dateMonth);
-      if (date === _date && month === _month) {
-        const pairOfHourAndMinute = this.#decompactTimesBinary(Array.from(dateMonthBuffer));
-        return [
-          { label: JadwalSholat.LABEL_IMSYA, hour: pairOfHourAndMinute[0], minute: pairOfHourAndMinute[1] },
-          { label: JadwalSholat.LABEL_SUBUH, hour: pairOfHourAndMinute[2], minute: pairOfHourAndMinute[3] },
-          { label: JadwalSholat.LABEL_TERBIT, hour: pairOfHourAndMinute[4], minute: pairOfHourAndMinute[5] },
-          { label: JadwalSholat.LABEL_DUHA, hour: pairOfHourAndMinute[6], minute: pairOfHourAndMinute[7] },
-          { label: JadwalSholat.LABEL_DZUHUR, hour: pairOfHourAndMinute[8], minute: pairOfHourAndMinute[9] },
-          { label: JadwalSholat.LABEL_ASHAR, hour: pairOfHourAndMinute[10], minute: pairOfHourAndMinute[11] },
-          { label: JadwalSholat.LABEL_MAGRIB, hour: pairOfHourAndMinute[12], minute: pairOfHourAndMinute[13] },
-          { label: JadwalSholat.LABEL_ISYA, hour: pairOfHourAndMinute[14], minute: pairOfHourAndMinute[15] },
-        ];
-      }
-    }
-
-    throw new Error('Time not found');
   }
 
-  /**
-   * @param {string} provinceName
-   * @param {string} regencyName
-   */
-  async #getLocationContentCursor(provinceName, regencyName) {
-    const [location] = await Promise.all([
-      this.getLocation(provinceName, regencyName),
-      this.#ensureDataLoaded(),
-    ]);
-
-    const locationGroupWidth = 2556;
-    const locationGroupsLength = this.#buffer.length / 2556;
-    /** @type {number|undefined} */
-    let locationGroupBeginAt = undefined;
-    const locationMetadataWidth = 1;
-    /** @type {number|undefined} */
-    let locationContentBeginAt = undefined;
-    const locationContentWidth = locationGroupWidth - locationMetadataWidth;
-
-    for (let index = 0; index < locationGroupsLength; index++) {
-      const beginReadAt = index * locationGroupWidth;
-      if (this.#buffer.at(beginReadAt) === location) {
-        locationGroupBeginAt = beginReadAt;
-        locationContentBeginAt = beginReadAt + locationMetadataWidth;
-        break;
-      }
-    }
-
-    if (locationGroupBeginAt === undefined || locationContentBeginAt === undefined) {
-      throw new Error('Schedule not found');
-    }
-
-    return { locationContentWidth, locationContentBeginAt };
-  }
-
-  /**
-   * @returns {Promise<Date>}
-   */
-  async getDataTimestamp() {
-    await this.#ensureMetadataLoaded();
-    return new Date(this.#metadata.timestamp);
-  }
-
-  #isDataLoaded = false;
-  async #ensureDataLoaded() {
-    if (this.#isDataLoaded) return;
-    const response = await fetch(`${this.cdn}/data/jadwal-sholat.bin`);
-    this.#buffer = new Uint16Array(await response.arrayBuffer());
-    this.#isDataLoaded = true;
-  }
-
-  #isMetadataLoaded = false;
   async #ensureMetadataLoaded() {
-    if (this.#isMetadataLoaded) return;
-    const response = await fetch(`${this.cdn}/data/jadwal-sholat.metadata`);
-    this.#metadata = this.#parseMetadata(await response.text());
-    this.#isMetadataLoaded = true;
-  }
-
-  /**
-   * @param {string} raw
-   * @returns {Metadata}
-   */
-  #parseMetadata(raw) {
-    const lines = raw.split('\n');
-
-    const [timestamp] = lines.shift()?.split('\t') ?? [];
-    const timePaddingStrs = lines.shift()?.split('\t') ?? [];
-
-    /** @type {Array<Province>} */
-    const provinces = lines
-      .map((line) => {
-        const [name, regenciesRaw] = line.split(':');
-        /** @type {Array<Regency>} */
-        const regencies = regenciesRaw
-          .split('\t')
-          .map((name) => {
-            return { name };
-          });
-        return {
-          name,
-          regencies,
-        }
-      });
-
-    return {
-      timestamp: parseInt(timestamp, 10),
-      timePaddings: timePaddingStrs.map((str) => parseInt(str, 10)),
-      provinces,
-    };
-  }
-
-  /**
-   * @param {number} first
-   * @param {number} second
-   */
-  #join8bitTo16bit(first, second) {
-    if (first > 0b11111111 || second > 0b11111111) {
-      console.warn(first, second);
-      throw new Error('Data lebih besar dari 8 bit');
+    if (this.#date instanceof Date) {
+      return;
     }
-    return first | (second << 8);
+
+    const metadataBuffer = await this.#fetchGz(this.#metadataUrl);
+
+    const textDecoder = new TextDecoder();
+    const metadata = textDecoder.decode(metadataBuffer);
+
+    const [timestampStr, ...provinceRows] = metadata.split('\n');
+
+    const timestamp = parseInt(timestampStr, 10);
+    const date = new Date(timestamp);
+
+    /** @type {Array<string>} */
+    const provinces = [];
+
+    /** @type {Map<string, Map<string, number>>} */
+    const provinceMap = new Map();
+
+    let regencyIndex = 0;
+
+
+    for (const [provinceIndex, provinceRow] of provinceRows.entries()) {
+      const [provinceName, regencyCols] = provinceRow.split(':');
+
+      provinces.push(provinceName);
+
+      /** @type {Map<string, number>} */
+      const regencyMap = new Map();
+
+      const regencyNames = regencyCols
+        .split('\t')
+        .map(function (regencyName) {
+          return regencyName.trim();
+        })
+        .filter(function (regencyName) {
+          return regencyName.length > 0;
+        });
+
+      for (const regencyName of regencyNames) {
+        regencyMap.set(regencyName, regencyIndex);
+        regencyIndex++;
+      }
+
+      provinceMap.set(provinceName, regencyMap);
+    }
+
+    this.#date = date;
+    this.#provinces = provinces;
+    this.#provinceMap = provinceMap;
+  }
+
+  async #ensureDataLoaded() {
+    if (this.#scheduleMap instanceof Map) {
+      return;
+    }
+
+    const beginTime = Date.now();
+
+    const textDecoder = new TextDecoder();
+
+    const dataBuffer = await this.#fetchGz(this.#dataUrl);
+    const dataView = new DataView(dataBuffer);
+
+    let offset = 0;
+
+    const magicBytes = dataView.buffer.slice(0, 8);
+    offset += 8;
+
+    const magicText = textDecoder.decode(magicBytes);
+
+    if (magicText !== 'AWQTSHLT') {
+      throw new Error('Invalid magic bytes');
+    }
+
+    const version = dataView.getUint16(offset, false);
+    offset += 2;
+
+    if (version !== 1) {
+      throw new Error('Invalid version');
+    }
+
+    const timestamp = dataView.getBigUint64(offset, false);
+    offset += 8;
+
+    const numOfRegencies = dataView.getUint16(offset, false);
+    offset += 2;
+
+    const numOfTimeDiffGroups = dataView.getUint16(offset, false);
+    offset += 2;
+
+    const numOfTimeDiffsInGroup = dataView.getUint8(offset);
+    offset += 1;
+
+    const numOfPrayerTimes = dataView.getInt8(offset);
+    offset += 1;
+
+    console.log({
+      magicBytes,
+      timestamp,
+      numOfRegencies,
+      numOfTimeDiffGroups,
+      numOfTimeDiffsInGroup,
+      numOfPrayerTimes,
+    });
+
+    /** @type {Map<number, Map<number, Map<number, Map<number, number>>>>} */
+    const scheduleMap = new Map();
+
+    for (let regencyIndex = 0; regencyIndex < numOfRegencies; regencyIndex++) {
+
+      for (let prayerTimeIndex = 0; prayerTimeIndex < numOfPrayerTimes; prayerTimeIndex++) {
+        const baseDate = new Date(Number(timestamp));
+        baseDate.setMonth(0);
+        baseDate.setDate(0);
+        baseDate.setHours(0);
+        baseDate.setMinutes(0);
+        baseDate.setSeconds(0);
+        baseDate.setMilliseconds(0);
+
+        const baseMinute = dataView.getUint16(offset, false);
+        offset += 2;
+
+        let dateStep = new Date(baseDate);
+
+        let minuteStep = baseMinute;
+        for (let timeDiffGroupIndex = 0; timeDiffGroupIndex < numOfTimeDiffGroups; timeDiffGroupIndex++) {
+          const timeDiffGroup = dataView.getUint8(offset);
+          offset += 1;
+
+          const first = (timeDiffGroup >> 6) & 0b11;
+          const second = (timeDiffGroup >> 4) & 0b11;
+          const third = (timeDiffGroup >> 2) & 0b11;
+          const fourth = (timeDiffGroup >> 0) & 0b11;
+
+          const timeDiffs = [first, second, third, fourth];
+
+          const adjustedTimeDiffs = timeDiffs.map(function (timeDiff) {
+            return timeDiff - 2;
+          });
+
+          for (const timeDiff of adjustedTimeDiffs) {
+            dateStep.setDate(dateStep.getDate() + 1);
+
+            const date = new Date(dateStep);
+
+            minuteStep += timeDiff;
+
+            const month = date.getMonth();
+            const dateOfMonth = date.getDate();
+            const minuteOfDay = minuteStep;
+
+            if (!scheduleMap.has(regencyIndex)) {
+              scheduleMap.set(regencyIndex, new Map());
+            }
+
+            const regencyMap = scheduleMap.get(regencyIndex);
+
+            if (!(regencyMap instanceof Map)) {
+              throw new Error('Invalid regency map');
+            }
+
+            if (!regencyMap.has(month)) {
+              regencyMap.set(month, new Map());
+            }
+
+            const monthMap = regencyMap.get(month);
+
+            if (!(monthMap instanceof Map)) {
+              throw new Error('Invalid month map');
+            }
+
+            if (!monthMap.has(dateOfMonth)) {
+              monthMap.set(dateOfMonth, new Map());
+            }
+
+            const dateMap = monthMap.get(dateOfMonth);
+
+            if (!(dateMap instanceof Map)) {
+              throw new Error('Invalid date map');
+            }
+
+            if (!dateMap.has(prayerTimeIndex)) {
+              dateMap.set(prayerTimeIndex, minuteOfDay);
+            }
+
+            console.log({
+              regencyIndex,
+              month,
+              date: dateOfMonth,
+              prayerTimeIndex,
+              minuteOfDay,
+            });
+
+            throw new Error('Stop');
+          }
+        }
+      }
+    }
+
+    const endTime = Date.now();
+
+    console.log(`Data loaded in ${endTime - beginTime} ms`);
+
+    this.#scheduleMap = scheduleMap;
   }
 
   /**
-   * @param {number} number
+   * @param {string} url
+   * @returns {Promise<ArrayBuffer>}
    */
-  #split16bitTo8bit(number) {
-    return [
-      (number & 0b0000000011111111),
-      (number & 0b1111111100000000) >> 8,
-    ];
-  }
+  async #fetchGz(url) {
+    const resp = await fetch(url);
+    const respBodyBlob = await resp.blob();
+    const respBodyStream = respBodyBlob.stream();
 
-  /**
-   * @param {Array<number>} compacts
-   */
-  #decompactTimesBinary(compacts) {
-    return [
-      ((compacts[0] & 0b0000000000111111) >> 0),
-      ((compacts[0] & 0b0000111111000000) >> 6),
-      ((compacts[0] & 0b1111000000000000) >> 10) | (compacts[1] & 0b0000000000000011),
-      ((compacts[1] & 0b0000000011111100) >> 2),
-      ((compacts[1] & 0b0011111100000000) >> 8),
-      ((compacts[1] & 0b1100000000000000) >> 10) | (compacts[2] & 0b0000000000001111),
-      ((compacts[2] & 0b0000001111110000) >> 4),
-      ((compacts[2] & 0b1111110000000000) >> 10),
-      ((compacts[3] & 0b0000000000111111) >> 0),
-      ((compacts[3] & 0b0000111111000000) >> 6),
-      ((compacts[3] & 0b1111000000000000) >> 10) | (compacts[4] & 0b0000000000000011),
-      ((compacts[4] & 0b0000000011111100) >> 2),
-      ((compacts[4] & 0b0011111100000000) >> 8),
-      ((compacts[4] & 0b1100000000000000) >> 10) | (compacts[5] & 0b0000000000001111),
-      ((compacts[5] & 0b0000001111110000) >> 4),
-      ((compacts[5] & 0b1111110000000000) >> 10),
-    ];
+    const ds = new DecompressionStream('gzip');
+    const decompressedStream = respBodyStream.pipeThrough(ds);
+
+    const dsResponse = new Response(decompressedStream);
+    const respBodyBuffer = await dsResponse.arrayBuffer();
+
+    return respBodyBuffer;
   }
 }
 
 /**
+ * @typedef {object} Regency
+ * @property {number} index
+ * @property {string} name
+ */
+
+/**
  * @typedef {object} Schedule
- * @property {number} date
  * @property {number} month
+ * @property {number} date
  * @property {Array<Time>} times
  */
 
@@ -322,22 +450,4 @@ export class JadwalSholat {
  * @property {string} label
  * @property {number} hour
  * @property {number} minute
- */
-
-/**
- * @typedef {object} Metadata
- * @property {number} timestamp
- * @property {Array<number>} timePaddings
- * @property {Array<Province>} provinces
- */
-
-/**
- * @typedef {object} Province
- * @property {string} name
- * @property {Array<Regency>} regencies
- */
-
-/**
- * @typedef {object} Regency
- * @property {string} name
  */

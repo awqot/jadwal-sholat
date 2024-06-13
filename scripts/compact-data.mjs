@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
-/** @typedef {import('../js/jadwal-sholat.mjs').Metadata} Metadata */
 /** @typedef {import('./fetch-data.mjs').JadwalSholatData} JadwalSholatData */
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
@@ -25,6 +24,7 @@ const magicBytes = Buffer.from('AWQTSHLT');
 
 const headerSize = magicBytes.length
   + 2 // store version in 2 bytes
+  + 8 // store timestamp in 8 bytes
   + 2 // store number of regencies in 2 bytes
   + 2 // store number of time diffs in 2 bytes
   + 1 // store time diff group size in 1 byte
@@ -45,18 +45,27 @@ let index = 0;
 // Write header
 buffer.subarray(0, magicBytes.length).set(magicBytes);
 index += magicBytes.length;
+
 // Write version
 buffer.writeUInt16BE(VERSION, index);
 index += 2;
+
+// Write timestamp
+buffer.writeBigUInt64BE(BigInt(timestamp), index);
+index += 8;
+
 // Write number of regencies
 buffer.writeUInt16BE(NUM_OF_REGENCIES, index);
 index += 2;
+
 // Write number of time diffs
 buffer.writeUInt16BE(Math.ceil(NUM_OF_TIME_DIFFS / TIME_DIFF_GROUP_SIZE), index);
 index += 2;
+
 // Write time diff group size
 buffer.writeUInt8(4, index);
 index += 1;
+
 // Write number of prayer times
 buffer.writeUInt8(NUM_OF_PRAYER_TIMES, index);
 index += 1;
