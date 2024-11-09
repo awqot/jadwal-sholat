@@ -16,7 +16,7 @@
   },
   "homepage": "https://github.com/awqot/jadwal-sholat#readme",
   "devDependencies": {
-    "@types/node": "^20.14.2",
-    "puppeteer": "^19.4.1"
+    "@types/node": "^22.8.6",
+    "puppeteer": "^23.6.1"
   }
 }

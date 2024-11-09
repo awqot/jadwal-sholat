@@ -1,5 +1,40 @@
 // @ts-check
 
+const versionOffset = 0
+  + 8 // magic word
+  ;
+
+const timestampOffset = versionOffset
+  + 2 // version
+  ;
+
+const numOfProvincesOffset = timestampOffset
+  + 8 // timestamp
+  ;
+
+const numOfRegenciesOffset = numOfProvincesOffset
+  + 1 // number of provinces
+  ;
+
+const numOfSchedulesOffset = numOfRegenciesOffset
+  + 2 // number of regencies
+  ;
+
+const provinceNamesOffsetOffset = numOfSchedulesOffset
+  + 2 // number of schedules
+  ;
+
+const provinceNamesIndicesOffset = provinceNamesOffsetOffset
+  + 8 // province names offset
+  ;
+
+const scheduleSize = 0
+  + 1 // month as u8
+  + 1 // date as u8
+  + 1 // hour as u8
+  + 1 // minute as u8
+  ;
+
 export class JadwalSholat {
   static get LABEL_IMSYA() { return 'Imsya'; };
   static get LABEL_SUBUH() { return 'Subuh'; };
@@ -9,24 +44,24 @@ export class JadwalSholat {
   static get LABEL_ASHAR() { return 'Ashar'; };
   static get LABEL_MAGRIB() { return 'Magrib'; };
   static get LABEL_ISYA() { return 'Isya'; };
+  static get LABELS() {
+    return [
+      JadwalSholat.LABEL_IMSYA,
+      JadwalSholat.LABEL_SUBUH,
+      JadwalSholat.LABEL_TERBIT,
+      JadwalSholat.LABEL_DUHA,
+      JadwalSholat.LABEL_DZUHUR,
+      JadwalSholat.LABEL_ASHAR,
+      JadwalSholat.LABEL_MAGRIB,
+      JadwalSholat.LABEL_ISYA,
+    ];
+  };
 
-  /** @type {string} */
-  #cdn;
+  #cdn = /** @type {string} */ ('');
 
-  /** @type {Date} */
-  #date;
-
-  /** @type {Array<string>} */
-  #provinces;
-
-  /** @type {Map<string, Map<string, number>>} */
-  #provinceMap;
-
-  /**
-   * regencyIndex -> month -> date -> prayerTimeIndex -> minuteOfDay
-   * @type {Map<number, Map<number, Map<number, Map<number, number>>>>}
-   */
-  #scheduleMap;
+  #data = /** @type {Uint8Array} */ (new Uint8Array([]));
+  #view = /** @type {DataView} */ (new DataView(this.#data.buffer));
+  #dataTimestamp = /** @type {Date} */ (new Date());
 
   /**
    * @param {string} cdn
@@ -39,18 +74,46 @@ export class JadwalSholat {
    * @returns {Promise<Date>}
    */
   async getDataTimestamp() {
-    await this.#ensureLoaded();
+    await this.#ensureDataLoaded();
 
-    return new Date(this.#date);
+    return new Date(this.#dataTimestamp);
   }
 
   /**
    * @returns {Promise<Array<string>>}
    */
   async getProvinces() {
-    await this.#ensureLoaded();
+    await this.#ensureDataLoaded();
 
-    return this.#provinces.slice();
+    const numOfProvinces = this.#data[numOfProvincesOffset];
+
+    const provinceNamesIndicesU8a = this.#data.slice(
+      provinceNamesIndicesOffset,
+      provinceNamesIndicesOffset + (numOfProvinces * 2),
+    );
+    const provinceNameIndicesView = new DataView(provinceNamesIndicesU8a.buffer);
+
+    const provinceNamesOffset = Number(this.#view.getBigUint64(provinceNamesOffsetOffset, true));
+
+    const provinces = [];
+    const textDecoder = new TextDecoder();
+    for (let index = 0; index < numOfProvinces; index++) {
+      const indexOffset = index * 2;
+      const provinceNameIndexOffset = provinceNameIndicesView.getUint16(indexOffset, true);
+      const provinceNameLengthOffset = provinceNamesOffset + provinceNameIndexOffset;
+      const provinceNameLength = this.#data[provinceNameLengthOffset];
+      const provinceNameOffset = provinceNameLengthOffset
+        + 1 // length of the name as u8
+        ;
+      const provinceNameU8a = this.#data.slice(
+        provinceNameOffset,
+        provinceNameOffset + provinceNameLength,
+      );
+      const provinceName = textDecoder.decode(provinceNameU8a);
+      provinces.push(provinceName);
+    }
+
+    return provinces;
   }
 
   /**
@@ -58,15 +121,59 @@ export class JadwalSholat {
    * @returns {Promise<Array<String>>}
    */
   async getRegencies(provinceName) {
-    await this.#ensureLoaded();
+    await this.#ensureDataLoaded();
 
-    const regencyMap = this.#provinceMap.get(provinceName);
+    const numOfProvinces = this.#data[numOfProvincesOffset];
 
-    if (!(regencyMap instanceof Map)) {
-      throw new Error(`Province "${provinceName}" not found`);
+    const provinceNamesIndicesU8a = this.#data.slice(
+      provinceNamesIndicesOffset,
+      provinceNamesIndicesOffset + (numOfProvinces * 2),
+    );
+    const provinceNameIndicesView = new DataView(provinceNamesIndicesU8a.buffer);
+
+    const provinceNamesOffset = Number(this.#view.getBigUint64(provinceNamesOffsetOffset, true));
+
+    const textDecoder = new TextDecoder();
+    for (let provinceIndex = 0; provinceIndex < numOfProvinces; provinceIndex++) {
+      const provinceIndexOffset = provinceIndex * 2;
+      const provinceNameIndexOffset = provinceNameIndicesView.getUint16(provinceIndexOffset, true);
+      const provinceNameLengthOffset = provinceNamesOffset + provinceNameIndexOffset;
+      const provinceNameLength = this.#data[provinceNameLengthOffset];
+      const provinceNameOffset = provinceNameLengthOffset
+        + 1 // length of the name as u8
+        ;
+      const provinceNameU8a = this.#data.slice(
+        provinceNameOffset,
+        provinceNameOffset + provinceNameLength,
+      );
+      const decodedProvinceName = textDecoder.decode(provinceNameU8a);
+
+      if (decodedProvinceName === provinceName) {
+        const numOfRegenciesOffset = provinceNameOffset + provinceNameLength;
+        const numOfRegencies = this.#data[numOfRegenciesOffset];
+
+        const regencies = [];
+        let regenciesOffset = numOfRegenciesOffset
+          + 1 // number of regencies as u8
+          ;
+        for (let regencyIndex = 0; regencyIndex < numOfRegencies; regencyIndex++) {
+          const regencyNameLength = this.#data[regenciesOffset];
+          regenciesOffset += 1;
+          const regencyNameU8a = this.#data.slice(
+            regenciesOffset,
+            regenciesOffset + regencyNameLength,
+          );
+          regenciesOffset += regencyNameLength;
+          const regencyName = textDecoder.decode(regencyNameU8a);
+          regencies.push(regencyName);
+        }
+
+        return regencies;
+      }
+
     }
 
-    return Array.from(regencyMap.keys());
+    return [];
   }
 
   /**
@@ -75,92 +182,60 @@ export class JadwalSholat {
    * @returns {Promise<Array<Schedule>>}
    */
   async getSchedules(provinceName, regencyName) {
-    await this.#ensureLoaded();
+    await this.#ensureDataLoaded();
 
-    const regencyMap = this.#provinceMap.get(provinceName);
+    const regencySchedulesIndex = this.#getRegencySchedulesIndex(provinceName, regencyName);
 
-    if (!(regencyMap instanceof Map)) {
-      throw new Error(`Province "${provinceName}" not found`);
+    if (regencySchedulesIndex === undefined) {
+      throw new Error(`Regency ${regencyName} in province ${provinceName} not found.`);
     }
 
-    const regencyIndex = regencyMap.get(regencyName);
+    const { provinceIndex, regencyIndex } = regencySchedulesIndex;
 
-    if (typeof regencyIndex !== 'number') {
-      throw new Error(`Invalid regency index for "${regencyName}"`);
-    }
+    const numOfProvinces = this.#data[numOfProvincesOffset];
+    const numOfSchedules = this.#view.getUint16(numOfSchedulesOffset, true);
+    const schedulesIndicesOffset = provinceNamesIndicesOffset
+      + (numOfProvinces * 2) // province names indices
+      ;
 
-    const monthMap = this.#scheduleMap.get(regencyIndex);
+    const provinceRegencyIndexOffset = schedulesIndicesOffset
+      + (provinceIndex * 2)
+      ;
+    const provinceRegencyIndex = this.#view.getUint16(provinceRegencyIndexOffset, true);
+    const regencyScheduleIndex = provinceRegencyIndex + regencyIndex;
 
-    if (!(monthMap instanceof Map)) {
-      throw new Error(`Invalid month map for regency index ${regencyIndex}`);
-    }
+    const regencyScheduleSize = numOfSchedules * scheduleSize;
+    const schedulesOffset = schedulesIndicesOffset
+      + (numOfProvinces * 2) // province schedule indices
+      ;
+    const regencySceduleOffset = schedulesOffset
+      + (regencyScheduleIndex * regencyScheduleSize) // previous regencies
+      ;
 
     /** @type {Array<Schedule>} */
     const schedules = [];
-
-    const months = Array.from(monthMap.keys());
-
-    for (const month of months) {
-      const dateMap = monthMap.get(month);
-
-      if (!(dateMap instanceof Map)) {
-        throw new Error(`Invalid date map for month ${month}`);
+    for (let scheduleIndex = 0; scheduleIndex < numOfSchedules; scheduleIndex++) {
+      const scheduleOffset = regencySceduleOffset
+        + (scheduleIndex * scheduleSize)
+        ;
+      const month = this.#data[scheduleOffset];
+      const date = this.#data[scheduleOffset + 1];
+      const hour = this.#data[scheduleOffset + 2];
+      const minute = this.#data[scheduleOffset + 3];
+      let schedule = schedules[schedules.length - 1];
+      if (schedule === undefined || schedule.month !== month || schedule.date !== date) {
+        schedule = {
+          month: month,
+          date: date,
+          times: [],
+        };
+        schedules.push(schedule);
       }
-
-      const dates = Array.from(dateMap.keys());
-
-      for (const date of dates) {
-        const timeMap = dateMap.get(date);
-
-        if (!(timeMap instanceof Map)) {
-          throw new Error(`Invalid time map for date ${date}`);
-        }
-
-        const times = Array.from(timeMap.entries())
-          .map(function ([prayerTimeIndex, minuteOfDay]) {
-            let label;
-            switch (prayerTimeIndex) {
-              case 1:
-                label = JadwalSholat.LABEL_SUBUH;
-                break;
-              case 2:
-                label = JadwalSholat.LABEL_TERBIT;
-                break;
-              case 3:
-                label = JadwalSholat.LABEL_DUHA;
-                break;
-              case 4:
-                label = JadwalSholat.LABEL_DZUHUR;
-                break;
-              case 5:
-                label = JadwalSholat.LABEL_ASHAR;
-                break;
-              case 6:
-                label = JadwalSholat.LABEL_MAGRIB;
-                break;
-              case 7:
-                label = JadwalSholat.LABEL_ISYA;
-                break;
-              default:
-                throw new Error(`Invalid prayer time index ${prayerTimeIndex}`);
-            }
-
-            const hour = Math.floor(minuteOfDay / 60);
-            const minute = minuteOfDay % 60;
-
-            return {
-              label,
-              hour,
-              minute,
-            };
-          });
-
-        schedules.push({
-          month,
-          date,
-          times,
-        });
-      }
+      schedule.times.push({
+        label: JadwalSholat.LABELS[schedule.times.length],
+        hour,
+        minute,
+      });
     }
 
     return schedules;
@@ -174,261 +249,145 @@ export class JadwalSholat {
    * @returns {Promise<Array<Time>>}
    */
   async getTimes(provinceName, regencyName, month, date) {
-    await this.#ensureLoaded();
+    await this.#ensureDataLoaded();
 
-    const schedules = await this.getSchedules(provinceName, regencyName);
+    const regencySchedulesIndex = this.#getRegencySchedulesIndex(provinceName, regencyName);
 
-    const schedule = schedules.find(function (schedule) {
-      return schedule.month === month && schedule.date === date;
-    });
-
-    if (typeof schedule === 'undefined') {
-      throw new Error(`Schedule not found for ${month}-${date}`);
+    if (regencySchedulesIndex === undefined) {
+      throw new Error(`Regency ${regencyName} in province ${provinceName} not found.`);
     }
 
-    return schedule.times;
-  }
+    const { provinceIndex, regencyIndex } = regencySchedulesIndex;
 
-  get #metadataUrl() {
-    return `${this.#cdn}/data/jadwal-sholat.metadata.gz`;
-  }
+    const numOfProvinces = this.#data[numOfProvincesOffset];
+    const numOfSchedules = this.#view.getUint16(numOfSchedulesOffset, true);
+    const schedulesIndicesOffset = provinceNamesIndicesOffset
+      + (numOfProvinces * 2) // province names indices
+      ;
 
-  get #dataUrl() {
-    return `${this.#cdn}/data/jadwal-sholat.bin.gz`;
-  }
+    const provinceRegencyIndexOffset = schedulesIndicesOffset
+      + (provinceIndex * 2)
+      ;
+    const provinceRegencyIndex = this.#view.getUint16(provinceRegencyIndexOffset, true);
+    const regencyScheduleIndex = provinceRegencyIndex + regencyIndex;
 
-  async #ensureLoaded() {
-    await Promise.all([
-      this.#ensureMetadataLoaded(),
-      this.#ensureDataLoaded(),
-    ]);
-  }
+    const regencyScheduleSize = numOfSchedules * scheduleSize;
+    const schedulesOffset = schedulesIndicesOffset
+      + (numOfProvinces * 2) // province schedule indices
+      ;
+    const regencySceduleOffset = schedulesOffset
+      + (regencyScheduleIndex * regencyScheduleSize) // previous regencies
+      ;
 
-  async #ensureMetadataLoaded() {
-    if (this.#date instanceof Date) {
-      return;
-    }
-
-    const metadataBuffer = await this.#fetchGz(this.#metadataUrl);
-
-    const textDecoder = new TextDecoder();
-    const metadata = textDecoder.decode(metadataBuffer);
-
-    const [timestampStr, ...provinceRows] = metadata.split('\n');
-
-    const timestamp = parseInt(timestampStr, 10);
-    const date = new Date(timestamp);
-
-    /** @type {Array<string>} */
-    const provinces = [];
-
-    /** @type {Map<string, Map<string, number>>} */
-    const provinceMap = new Map();
-
-    let regencyIndex = 0;
-
-
-    for (const [provinceIndex, provinceRow] of provinceRows.entries()) {
-      const [provinceName, regencyCols] = provinceRow.split(':');
-
-      provinces.push(provinceName);
-
-      /** @type {Map<string, number>} */
-      const regencyMap = new Map();
-
-      const regencyNames = regencyCols
-        .split('\t')
-        .map(function (regencyName) {
-          return regencyName.trim();
-        })
-        .filter(function (regencyName) {
-          return regencyName.length > 0;
+    /** @type {Array<Time>} */
+    const times = [];
+    for (let scheduleIndex = 0; scheduleIndex < numOfSchedules; scheduleIndex++) {
+      const scheduleOffset = regencySceduleOffset
+        + (scheduleIndex * scheduleSize)
+        ;
+      const scheduleMonth = this.#data[scheduleOffset];
+      const scheduleDate = this.#data[scheduleOffset + 1];
+      const hour = this.#data[scheduleOffset + 2];
+      const minute = this.#data[scheduleOffset + 3];
+      if (scheduleMonth === month && scheduleDate === date) {
+        times.push({
+          label: JadwalSholat.LABELS[times.length],
+          hour,
+          minute,
         });
-
-      for (const regencyName of regencyNames) {
-        regencyMap.set(regencyName, regencyIndex);
-        regencyIndex++;
       }
-
-      provinceMap.set(provinceName, regencyMap);
+      if (times.length === JadwalSholat.LABELS.length) {
+        break;
+      }
     }
 
-    this.#date = date;
-    this.#provinces = provinces;
-    this.#provinceMap = provinceMap;
+    return times;
   }
 
-  async #ensureDataLoaded() {
-    if (this.#scheduleMap instanceof Map) {
-      return;
-    }
+  /**
+   * @param {string} provinceName
+   * @param {string} regencyName
+   * @returns {{ provinceIndex: number, regencyIndex: number }|undefined}
+   */
+  #getRegencySchedulesIndex(provinceName, regencyName) {
+    const numOfProvinces = this.#data[numOfProvincesOffset];
 
-    const beginTime = Date.now();
+    const provinceNamesIndicesU8a = this.#data.slice(
+      provinceNamesIndicesOffset,
+      provinceNamesIndicesOffset + (numOfProvinces * 2),
+    );
+    const provinceNameIndicesView = new DataView(provinceNamesIndicesU8a.buffer);
+
+    const provinceNamesOffset = Number(this.#view.getBigUint64(provinceNamesOffsetOffset, true));
 
     const textDecoder = new TextDecoder();
-
-    const dataBuffer = await this.#fetchGz(this.#dataUrl);
-    const dataView = new DataView(dataBuffer);
-
-    let offset = 0;
-
-    const magicBytes = dataView.buffer.slice(0, 8);
-    offset += 8;
-
-    const magicText = textDecoder.decode(magicBytes);
-
-    if (magicText !== 'AWQTSHLT') {
-      throw new Error('Invalid magic bytes');
-    }
-
-    const version = dataView.getUint16(offset, false);
-    offset += 2;
-
-    if (version !== 1) {
-      throw new Error('Invalid version');
-    }
-
-    const timestamp = dataView.getBigUint64(offset, false);
-    offset += 8;
-
-    const numOfRegencies = dataView.getUint16(offset, false);
-    offset += 2;
-
-    const numOfTimeDiffGroups = dataView.getUint16(offset, false);
-    offset += 2;
-
-    const numOfTimeDiffsInGroup = dataView.getUint8(offset);
-    offset += 1;
-
-    const numOfPrayerTimes = dataView.getInt8(offset);
-    offset += 1;
-
-    console.log({
-      magicBytes,
-      timestamp,
-      numOfRegencies,
-      numOfTimeDiffGroups,
-      numOfTimeDiffsInGroup,
-      numOfPrayerTimes,
-    });
-
-    /** @type {Map<number, Map<number, Map<number, Map<number, number>>>>} */
-    const scheduleMap = new Map();
-
-    for (let regencyIndex = 0; regencyIndex < numOfRegencies; regencyIndex++) {
-
-      for (let prayerTimeIndex = 0; prayerTimeIndex < numOfPrayerTimes; prayerTimeIndex++) {
-        const baseDate = new Date(Number(timestamp));
-        baseDate.setMonth(0);
-        baseDate.setDate(0);
-        baseDate.setHours(0);
-        baseDate.setMinutes(0);
-        baseDate.setSeconds(0);
-        baseDate.setMilliseconds(0);
-
-        const baseMinute = dataView.getUint16(offset, false);
-        offset += 2;
-
-        let dateStep = new Date(baseDate);
-
-        let minuteStep = baseMinute;
-        for (let timeDiffGroupIndex = 0; timeDiffGroupIndex < numOfTimeDiffGroups; timeDiffGroupIndex++) {
-          const timeDiffGroup = dataView.getUint8(offset);
-          offset += 1;
-
-          const first = (timeDiffGroup >> 6) & 0b11;
-          const second = (timeDiffGroup >> 4) & 0b11;
-          const third = (timeDiffGroup >> 2) & 0b11;
-          const fourth = (timeDiffGroup >> 0) & 0b11;
-
-          const timeDiffs = [first, second, third, fourth];
-
-          const adjustedTimeDiffs = timeDiffs.map(function (timeDiff) {
-            return timeDiff - 2;
-          });
-
-          for (const timeDiff of adjustedTimeDiffs) {
-            dateStep.setDate(dateStep.getDate() + 1);
-
-            const date = new Date(dateStep);
-
-            minuteStep += timeDiff;
-
-            const month = date.getMonth();
-            const dateOfMonth = date.getDate();
-            const minuteOfDay = minuteStep;
-
-            if (!scheduleMap.has(regencyIndex)) {
-              scheduleMap.set(regencyIndex, new Map());
-            }
-
-            const regencyMap = scheduleMap.get(regencyIndex);
-
-            if (!(regencyMap instanceof Map)) {
-              throw new Error('Invalid regency map');
-            }
-
-            if (!regencyMap.has(month)) {
-              regencyMap.set(month, new Map());
-            }
-
-            const monthMap = regencyMap.get(month);
-
-            if (!(monthMap instanceof Map)) {
-              throw new Error('Invalid month map');
-            }
-
-            if (!monthMap.has(dateOfMonth)) {
-              monthMap.set(dateOfMonth, new Map());
-            }
-
-            const dateMap = monthMap.get(dateOfMonth);
-
-            if (!(dateMap instanceof Map)) {
-              throw new Error('Invalid date map');
-            }
-
-            if (!dateMap.has(prayerTimeIndex)) {
-              dateMap.set(prayerTimeIndex, minuteOfDay);
-            }
-
-            console.log({
-              regencyIndex,
-              month,
-              date: dateOfMonth,
-              prayerTimeIndex,
-              minuteOfDay,
-            });
-
-            throw new Error('Stop');
+    for (let provinceIndex = 0; provinceIndex < numOfProvinces; provinceIndex++) {
+      const provinceIndexOffset = provinceIndex * 2;
+      const provinceNameIndexOffset = provinceNameIndicesView.getUint16(provinceIndexOffset, true);
+      const provinceNameLengthOffset = provinceNamesOffset + provinceNameIndexOffset;
+      const provinceNameLength = this.#data[provinceNameLengthOffset];
+      const provinceNameOffset = provinceNameLengthOffset
+        + 1 // length of the name as u8
+        ;
+      const provinceNameU8a = this.#data.slice(
+        provinceNameOffset,
+        provinceNameOffset + provinceNameLength,
+      );
+      const decodedProvinceName = textDecoder.decode(provinceNameU8a);
+      if (decodedProvinceName === provinceName) {
+        const numOfRegenciesOffset = provinceNameOffset + provinceNameLength;
+        const numOfRegencies = this.#data[numOfRegenciesOffset];
+        let regenciesOffset = numOfRegenciesOffset
+          + 1 // number of regencies as u8
+          ;
+        for (let regencyIndex = 0; regencyIndex < numOfRegencies; regencyIndex++) {
+          const regencyNameLength = this.#data[regenciesOffset];
+          regenciesOffset += 1;
+          const regencyNameU8a = this.#data.slice(
+            regenciesOffset,
+            regenciesOffset + regencyNameLength,
+          );
+          regenciesOffset += regencyNameLength;
+          const decodedRegencyName = textDecoder.decode(regencyNameU8a);
+          if (decodedRegencyName === regencyName) {
+            return {
+              provinceIndex: provinceIndex,
+              regencyIndex: regencyIndex,
+            };
           }
         }
       }
     }
-
-    const endTime = Date.now();
-
-    console.log(`Data loaded in ${endTime - beginTime} ms`);
-
-    this.#scheduleMap = scheduleMap;
   }
 
-  /**
-   * @param {string} url
-   * @returns {Promise<ArrayBuffer>}
-   */
-  async #fetchGz(url) {
-    const resp = await fetch(url);
-    const respBodyBlob = await resp.blob();
-    const respBodyStream = respBodyBlob.stream();
+  get #dataUrl() {
+    return `${this.#cdn}/data/jadwal-sholat.ajs`;
+  }
 
-    const ds = new DecompressionStream('gzip');
-    const decompressedStream = respBodyStream.pipeThrough(ds);
+  async #ensureDataLoaded() {
+    if (this.#data.byteLength === 0) {
+      console.info(`Fetching data from ${this.#dataUrl}`);
+      const resp = await fetch(this.#dataUrl);
+      const respBodyBuffer = await resp.arrayBuffer();
+      const respBodyU8a = new Uint8Array(respBodyBuffer);
+      this.#data = respBodyU8a;
+      this.#view = new DataView(this.#data.buffer);
+      const timestamp = Number(this.#view.getBigUint64(timestampOffset, true));
+      this.#dataTimestamp = new Date(timestamp);
+    }
 
-    const dsResponse = new Response(decompressedStream);
-    const respBodyBuffer = await dsResponse.arrayBuffer();
+    const magicWord = [65, 87, 81, 84, 83, 72, 76, 84]; // AWQTSHLT
+    for (let index = 0; index < magicWord.length; index++) {
+      if (this.#data[index] !== magicWord[index]) {
+        throw new Error(`Invalid magic word data. Expected: ${magicWord.join(', ')}. Actual: ${Array.from(this.#data.subarray(0, magicWord.length)).join(', ')}.`);
+      }
+    }
 
-    return respBodyBuffer;
+    const suportedVersions = [1];
+    const version = this.#view.getUint16(versionOffset, true);
+    if (!suportedVersions.includes(version)) {
+      throw new Error(`Unsupported version: ${version}. Supported versions: ${suportedVersions.join(', ')}.`);
+    }
   }
 }
 

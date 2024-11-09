@@ -1,178 +1,199 @@
 // @ts-check
 
+import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
-/** @typedef {import('./fetch-data.mjs').JadwalSholatData} JadwalSholatData */
+/** @typedef {import('./fetch-data.mjs').PrayerTimeSchedule} PrayerTimeSchedule */
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 
+/** @type {PrayerTimeSchedule} */
+const { retrievedTime, provinces } = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/jadwal-sholat.json'), {
+  encoding: 'utf8',
+}));
+
+const MAX_UINT16 = 0xFFFF;
+const MAX_UINT8 = 0xFF;
+
 const VERSION = 1;
-const NUM_OF_TIME_DIFFS = 366;
-const NUM_OF_REGENCIES = 517;
-// const NUM_OF_PRAYER_TIMES = 8;
-const NUM_OF_PRAYER_TIMES = 7; // minus imsak dari fact check bahwa imsak selalu 10 menit sebelum subuh
-const TIME_DIFF_GROUP_SIZE = 4;
+const NUM_OF_PROVINCES = provinces.length;
+const NUM_OF_REGENCIES = provinces.reduce((sum, { regencies }) => sum + regencies.length, 0);
+const NUM_OF_SCHEDULES = provinces[0].regencies[0].schedules.length; // this is sample, it should be the same for all regencies
 
-/** @type {JadwalSholatData} */
-const { timestamp, prayerTimeScheduleMap } = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/jadwal-sholat.json'), { encoding: 'utf8' }));
+const textEncoder = new TextEncoder();
 
-let metadata = `${timestamp}`;
+const utf8ProvinceNames = provinces.map(({ provinceName }) => textEncoder.encode(provinceName));
+const utf8RegencyNamesOfProvinces = provinces.map(({ regencies }) => regencies.map(({ regencyName }) => textEncoder.encode(regencyName)));
 
-const magicBytes = Buffer.from('AWQTSHLT');
+const magicU8a = textEncoder.encode('AWQTSHLT');
 
-const headerSize = magicBytes.length
-  + 2 // store version in 2 bytes
-  + 8 // store timestamp in 8 bytes
-  + 2 // store number of regencies in 2 bytes
-  + 2 // store number of time diffs in 2 bytes
-  + 1 // store time diff group size in 1 byte
-  + 1 // store number of prayer times in 1 byte
+const headerSize = magicU8a.byteLength
+  + 2 // version as u16
+  + 8 // timestamp in millis as u64
+  + 1 // number of provinces as u8
+  + 2 // number of regencies as u16
+  + 2 // number of schedules as u16
+  ;
 
-const regencyScheduleSize = 2 // baseMinuteOfDay
-  + Math.ceil(NUM_OF_TIME_DIFFS / TIME_DIFF_GROUP_SIZE); // kita dapat menyimpan 4 time diff dalam 8 bit, 2 bit merepresentasikan 4 states: -2, -1, 0, 1.
+const indexSize = 0
+  + 8 // province names index as u64
+  + (2 * NUM_OF_PROVINCES) // province names indices as u16
+  + (2 * NUM_OF_PROVINCES) // province schedule indices as u16
+  ;
 
-const rowSize = NUM_OF_PRAYER_TIMES * regencyScheduleSize;
+const scheduleSize = 0
+  + 1 // date as u8
+  + 1 // month as u8
+  + 1 // hour as u8
+  + 1 // minute as u8
+  ;
 
-const contentSize = NUM_OF_REGENCIES * rowSize;
+const regencyScheduleSize = NUM_OF_SCHEDULES * scheduleSize;
+const schedulesTotalSize = NUM_OF_REGENCIES * regencyScheduleSize;
 
-const bufferSize = headerSize + contentSize;
+const provinceNamesOffset = headerSize + indexSize + schedulesTotalSize;
 
-const buffer = Buffer.alloc(bufferSize);
-let index = 0;
-
-// Write header
-buffer.subarray(0, magicBytes.length).set(magicBytes);
-index += magicBytes.length;
-
-// Write version
-buffer.writeUInt16BE(VERSION, index);
-index += 2;
-
-// Write timestamp
-buffer.writeBigUInt64BE(BigInt(timestamp), index);
-index += 8;
-
-// Write number of regencies
-buffer.writeUInt16BE(NUM_OF_REGENCIES, index);
-index += 2;
-
-// Write number of time diffs
-buffer.writeUInt16BE(Math.ceil(NUM_OF_TIME_DIFFS / TIME_DIFF_GROUP_SIZE), index);
-index += 2;
-
-// Write time diff group size
-buffer.writeUInt8(4, index);
-index += 1;
-
-// Write number of prayer times
-buffer.writeUInt8(NUM_OF_PRAYER_TIMES, index);
-index += 1;
-
-const provinces = Object.keys(prayerTimeScheduleMap);
-
-provinces.sort(function (a, z) {
-  return a.localeCompare(z);
-});
-
-let regencyCount = 0;
-
-for (const [provinceIndex, province] of provinces.entries()) {
-  const regencies = Object.keys(prayerTimeScheduleMap[province]);
-
-  regencies.sort(function (a, z) {
-    return a.localeCompare(z);
+const { provinceNamesSize, provinceNamesIndices } = utf8ProvinceNames
+  .reduce(function ({ provinceNamesSize, provinceNamesIndices }, provinceName, index) {
+    const regencyNames = utf8RegencyNamesOfProvinces[index];
+    const regencyNamesSize = regencyNames
+      .reduce(function (accSize, regencyName) {
+        return accSize
+          + 1 // length of the name as u8
+          + regencyName.byteLength
+          ;
+      }, 0);
+    return {
+      provinceNamesSize: provinceNamesSize
+        + 1 // length of the name as u8
+        + provinceName.byteLength
+        + 1 // number of regencies as u8
+        + regencyNamesSize,
+      provinceNamesIndices: [...provinceNamesIndices, provinceNamesSize],
+    };
+  }, {
+    provinceNamesSize: 0,
+    provinceNamesIndices: /** @type {Array<number>} */ ([]),
   });
 
-  metadata += '\n';
-  metadata += `${province}:`;
+const { provinceScheduleIndices } = provinces
+  .reduce(function ({ provinceOffset, provinceScheduleIndices }, { regencies }) {
+    return {
+      provinceOffset: provinceOffset + regencies.length,
+      provinceScheduleIndices: [
+        ...provinceScheduleIndices,
+        provinceOffset,
+      ],
+    };
+  }, {
+    provinceOffset: 0,
+    provinceScheduleIndices: /** @type {Array<number>} */ ([]),
+  });
 
-  for (const [regencyIndex, regency] of regencies.entries()) {
-    const prayerTimes = prayerTimeScheduleMap[province][regency];
+const u8a = new Uint8Array(headerSize + indexSize + schedulesTotalSize + provinceNamesSize);
+const data = new DataView(u8a.buffer);
+let offset = 0;
 
-    prayerTimes.sort(function (a, z) {
-      return a.baseMinuteOfDay - z.baseMinuteOfDay;
-    });
+u8a.set(magicU8a, offset);
+offset += magicU8a.byteLength;
 
-    // Fact Check: Apakah imsak selalu 10 menit sebelum subuh?
-    const imsak = prayerTimes[0];
-    const subuh = prayerTimes[1];
+data.setUint16(offset, VERSION, true);
+offset += 2;
 
-    if (imsak.baseMinuteOfDay !== subuh.baseMinuteOfDay - 10) {
-      throw new Error('Imsak is not always 10 minutes before subuh.');
-    }
+data.setBigUint64(offset, BigInt(retrievedTime), true);
+offset += 8;
 
-    for (const [scheduleIndex, { timeDiff }] of subuh.schedules.entries()) {
-      const imsakSchedule = imsak.schedules[scheduleIndex];
+u8a[offset] = NUM_OF_PROVINCES;
+offset += 1;
 
-      if (timeDiff !== imsakSchedule.timeDiff) {
-        throw new Error('Imsak schedule is not equal to subuh schedule.');
-      }
-    }
+data.setUint16(offset, NUM_OF_REGENCIES, true);
+offset += 2;
 
-    metadata += '\t';
-    metadata += `${regency}`;
+data.setUint16(offset, NUM_OF_SCHEDULES, true);
+offset += 2;
 
-    const includedPrayerTimes = prayerTimes.filter(function (_, index) {
-      // Skip imsak
-      if (index === 0) {
-        return false;
-      }
-      return true;
-    });
+data.setBigUint64(offset, BigInt(provinceNamesOffset), true);
+offset += 8;
 
-    if (includedPrayerTimes.length !== NUM_OF_PRAYER_TIMES) {
-      throw new Error(`Number of prayer times is not equal to ${NUM_OF_PRAYER_TIMES}.`);
-    }
+for (const provinceNameIndex of provinceNamesIndices) {
+  assert.ok(provinceNameIndex <= MAX_UINT16, `Region name index is too big: ${provinceNameIndex} > ${MAX_UINT16}`);
 
-    prayerTimeLoop:
-    for (const [prayerTimeIndex, { baseMinuteOfDay, schedules }] of includedPrayerTimes.entries()) {
-      if (schedules.length !== NUM_OF_TIME_DIFFS) {
-        throw new Error('Number of schedules is not equal to 366.');
-      }
+  data.setUint16(offset, provinceNameIndex, true);
+  offset += 2;
+}
 
-      buffer.writeUInt16BE(baseMinuteOfDay, index);
-      index += 2;
+for (const provinceScheduleIndex of provinceScheduleIndices) {
+  assert.ok(provinceScheduleIndex <= MAX_UINT16, `Region schedule index is too big: ${provinceScheduleIndex} > ${MAX_UINT16}`);
 
-      const timeDiffs = schedules.map(function (schedule) {
-        return schedule.timeDiff;
-      });
+  data.setUint16(offset, provinceScheduleIndex, true);
+  offset += 2;
+}
 
-      for (const timeDiff of timeDiffs) {
-        if (![-2, -1, 0, 1].includes(timeDiff)) {
-          throw new Error('Time diff is not in range of -2 to 1.');
+for (const { regencies } of provinces) {
+  for (const { schedules } of regencies) {
+    assert.strictEqual(schedules.length, NUM_OF_SCHEDULES, 'Number of schedules is not the same for all regencies');
+
+    schedules.sort(function (a, z) {
+      if (a.month === z.month) {
+        if (a.date === z.date) {
+          if (a.hour === z.hour) {
+            return a.minute - z.minute;
+          }
+          return a.hour - z.hour;
         }
+        return a.date - z.date;
       }
+      return a.month - z.month;
+    });
 
-      const adjustedTimeDiffs = timeDiffs.map(function (timeDiff) {
-        return timeDiff + 2;
-      });
+    for (const { month, date, hour, minute } of schedules) {
+      u8a[offset] = month;
+      offset += 1;
 
-      for (let timeDiffIndex = 0; timeDiffIndex < adjustedTimeDiffs.length; timeDiffIndex += 4) {
-        const first = adjustedTimeDiffs[timeDiffIndex];
-        const second = adjustedTimeDiffs[timeDiffIndex + 1];
-        const third = adjustedTimeDiffs[timeDiffIndex + 2] ?? 0;
-        const fourth = adjustedTimeDiffs[timeDiffIndex + 3] ?? 0;
+      u8a[offset] = date;
+      offset += 1;
 
-        const value = (first << 6) | (second << 4) | (third << 2) | fourth;
+      u8a[offset] = hour;
+      offset += 1;
 
-        buffer.writeUInt8(value, index);
-        index += 1;
-      }
+      u8a[offset] = minute;
+      offset += 1;
     }
-
-    regencyCount++;
   }
 }
 
-if (regencyCount !== NUM_OF_REGENCIES) {
-  throw new Error('Number of regencies is not equal to 517.');
+for (const [provinceIndex, utf8ProvinceName] of utf8ProvinceNames.entries()) {
+  assert.ok(utf8ProvinceName.byteLength <= MAX_UINT8, `Province name is too long: ${utf8ProvinceName.byteLength} > ${MAX_UINT16}`);
+
+  const utf8RegencyNames = utf8RegencyNamesOfProvinces[provinceIndex];
+
+  data.setUint8(offset, utf8ProvinceName.byteLength);
+  offset += 1;
+
+  u8a.set(utf8ProvinceName, offset);
+  offset += utf8ProvinceName.byteLength;
+
+  u8a[offset] = utf8RegencyNames.length;
+  offset += 1;
+
+  for (const utf8RegencyName of utf8RegencyNames) {
+    assert.ok(utf8RegencyName.byteLength <= MAX_UINT8, `Regency name is too long: ${utf8RegencyName.byteLength} > ${MAX_UINT16}`);
+
+    data.setUint8(offset, utf8RegencyName.byteLength);
+    offset += 1;
+
+    u8a.set(utf8RegencyName, offset);
+    offset += utf8RegencyName.byteLength;
+  }
 }
 
-if (index !== bufferSize) {
-  throw new Error(`Expected index to be ${bufferSize}, but got ${index}.`);
-}
+console.info(`Magic word: ${magicU8a.byteLength} bytes @ ${0}`);
+console.info(`Header: ${headerSize} bytes @ ${magicU8a.byteLength}`);
+console.info(`Index: ${indexSize} bytes @ ${magicU8a.byteLength + headerSize}`);
+console.info(`Schedule: ${schedulesTotalSize} bytes @ ${magicU8a.byteLength + headerSize + indexSize}`);
+console.info(`Region names: ${provinceNamesSize} bytes @ ${magicU8a.byteLength + headerSize + indexSize + schedulesTotalSize}`);
+console.info(`Total size: ${u8a.byteLength} bytes`);
 
-fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.bin'), buffer);
-fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.metadata'), metadata, { encoding: 'utf8' });
+fs.writeFileSync(path.join(__dirname, '../data/jadwal-sholat.ajs'), u8a);
