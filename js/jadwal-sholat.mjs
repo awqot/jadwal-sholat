@@ -97,9 +97,9 @@ export class JadwalSholat {
 
     const provinces = [];
     const textDecoder = new TextDecoder();
-    for (let index = 0; index < numOfProvinces; index++) {
-      const indexOffset = index * 2;
-      const provinceNameIndexOffset = provinceNameIndicesView.getUint16(indexOffset, true);
+    for (let privinceIndex = 0; privinceIndex < numOfProvinces; privinceIndex++) {
+      const provinceIndexOffset = privinceIndex * 2;
+      const provinceNameIndexOffset = provinceNameIndicesView.getUint16(provinceIndexOffset, true);
       const provinceNameLengthOffset = provinceNamesOffset + provinceNameIndexOffset;
       const provinceNameLength = this.#data[provinceNameLengthOffset];
       const provinceNameOffset = provinceNameLengthOffset
@@ -152,7 +152,7 @@ export class JadwalSholat {
         const numOfRegenciesOffset = provinceNameOffset + provinceNameLength;
         const numOfRegencies = this.#data[numOfRegenciesOffset];
 
-        const regencies = [];
+        const regencyNames = [];
         let regenciesOffset = numOfRegenciesOffset
           + 1 // number of regencies as u8
           ;
@@ -165,15 +165,15 @@ export class JadwalSholat {
           );
           regenciesOffset += regencyNameLength;
           const regencyName = textDecoder.decode(regencyNameU8a);
-          regencies.push(regencyName);
+          regencyNames.push(regencyName);
         }
 
-        return regencies;
+        return regencyNames;
       }
 
     }
 
-    return [];
+    throw new Error(`Province ${provinceName} not found.`);
   }
 
   /**
@@ -190,7 +190,7 @@ export class JadwalSholat {
       throw new Error(`Regency ${regencyName} in province ${provinceName} not found.`);
     }
 
-    const { provinceIndex, regencyIndex } = regencySchedulesIndex;
+    const [provinceIndex, regencyIndex] = regencySchedulesIndex;
 
     const numOfProvinces = this.#data[numOfProvincesOffset];
     const numOfSchedules = this.#view.getUint16(numOfSchedulesOffset, true);
@@ -257,7 +257,7 @@ export class JadwalSholat {
       throw new Error(`Regency ${regencyName} in province ${provinceName} not found.`);
     }
 
-    const { provinceIndex, regencyIndex } = regencySchedulesIndex;
+    const [provinceIndex, regencyIndex] = regencySchedulesIndex;
 
     const numOfProvinces = this.#data[numOfProvincesOffset];
     const numOfSchedules = this.#view.getUint16(numOfSchedulesOffset, true);
@@ -307,7 +307,7 @@ export class JadwalSholat {
   /**
    * @param {string} provinceName
    * @param {string} regencyName
-   * @returns {{ provinceIndex: number, regencyIndex: number }|undefined}
+   * @returns {Array<number>|undefined}
    */
   #getRegencySchedulesIndex(provinceName, regencyName) {
     const numOfProvinces = this.#data[numOfProvincesOffset];
@@ -350,14 +350,16 @@ export class JadwalSholat {
           regenciesOffset += regencyNameLength;
           const decodedRegencyName = textDecoder.decode(regencyNameU8a);
           if (decodedRegencyName === regencyName) {
-            return {
-              provinceIndex: provinceIndex,
-              regencyIndex: regencyIndex,
-            };
+            return [
+              provinceIndex,
+              regencyIndex,
+            ];
           }
         }
       }
     }
+
+    return undefined;
   }
 
   get #dataUrl() {

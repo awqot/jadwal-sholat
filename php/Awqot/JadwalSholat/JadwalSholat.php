@@ -2,6 +2,7 @@
 
 namespace Awqot\JadwalSholat;
 
+use DateTime;
 use Exception;
 
 class JadwalSholat
@@ -14,105 +15,218 @@ class JadwalSholat
   const LABEL_ASHAR = "Ashar";
   const LABEL_MAGRIB = "Magrib";
   const LABEL_ISYA = "Isya";
+  const LABELS = [
+    self::LABEL_IMSYA,
+    self::LABEL_SUBUH,
+    self::LABEL_TERBIT,
+    self::LABEL_DUHA,
+    self::LABEL_DZUHUR,
+    self::LABEL_ASHAR,
+    self::LABEL_MAGRIB,
+    self::LABEL_ISYA,
+  ];
+
+  private const magicWord = "AWQTSHLT";
+
+  private const versionOffset = 0
+      + 8 // magic word as bytes array with length 8
+  ;
+  private const timestampOffset = self::versionOffset
+      + 2 // version as u16
+  ;
+  private const numOfProvincesOffset = self::timestampOffset
+      + 8 // timestamp as u64
+  ;
+  private const numOfRegenciesOffset = self::numOfProvincesOffset
+      + 1 // number of provinces as u8
+  ;
+  private const numOfSchedulesOffset = self::numOfRegenciesOffset
+      + 2 // number of regencies as u16
+  ;
+  private const provinceNamesOffsetOffset = self::numOfSchedulesOffset
+      + 2 // number of schedules as u16
+  ;
+  private const provinceNamesIndicesOffset = self::provinceNamesOffsetOffset
+      + 8 // province names offset as u64
+  ;
+  private const scheduleSize = 0
+      + 1 // month as u8
+      + 1 // date as u8
+      + 1 // hour as u8
+      + 1 // minute as u8
+  ;
 
   public static function default()
   {
     return JadwalSholat::fromFile(
-      __DIR__ . "/../../../data/jadwal-sholat.metadata",
-      __DIR__ . "/../../../data/jadwal-sholat.bin",
+      __DIR__ . "/../../../data/jadwal-sholat.ajs",
     );
   }
 
-  public static function fromFile(string $absMetadataFilePath, string $absJadwalSholatFilePath)
+  public static function fromFile(string $absDataFilePath)
   {
-    $metadata = Metadata::fromFile($absMetadataFilePath);
+    $buffer = file_get_contents($absDataFilePath) ?: "";
 
-    $chars = file_get_contents($absJadwalSholatFilePath) ?: "";
-
-    return new JadwalSholat(
-      $metadata,
-      $chars,
-    );
-  }
-
-  private static function join8bitTo16bit(int $first, int $second)
-  {
-    if ($first > 0b11111111 || $second > 0b11111111) {
-      throw new Exception('Data lebih besar dari 8 bit');
+    if (substr($buffer, 0, 8) !== self::magicWord) {
+      throw new Exception("Invalid magic word data. Expected: " . self::magicWord . ", got: " . substr($buffer, 0, 8));
     }
-    return $first | ($second << 8);
-  }
 
-  private static function decompactTimesBinary(string $i8Chars)
-  {
-    $i16Ints = [
-      static::join8bitTo16bit(ord($i8Chars[0]), ord($i8Chars[1])),
-      static::join8bitTo16bit(ord($i8Chars[2]), ord($i8Chars[3])),
-      static::join8bitTo16bit(ord($i8Chars[4]), ord($i8Chars[5])),
-      static::join8bitTo16bit(ord($i8Chars[6]), ord($i8Chars[7])),
-      static::join8bitTo16bit(ord($i8Chars[8]), ord($i8Chars[9])),
-      static::join8bitTo16bit(ord($i8Chars[10]), ord($i8Chars[11])),
-    ];
-    return [
-      (($i16Ints[0] & 0b0000000000111111) >> 0),
-      (($i16Ints[0] & 0b0000111111000000) >> 6),
-      (($i16Ints[0] & 0b1111000000000000) >> 10) | ($i16Ints[1] & 0b0000000000000011),
-      (($i16Ints[1] & 0b0000000011111100) >> 2),
-      (($i16Ints[1] & 0b0011111100000000) >> 8),
-      (($i16Ints[1] & 0b1100000000000000) >> 10) | ($i16Ints[2] & 0b0000000000001111),
-      (($i16Ints[2] & 0b0000001111110000) >> 4),
-      (($i16Ints[2] & 0b1111110000000000) >> 10),
-      (($i16Ints[3] & 0b0000000000111111) >> 0),
-      (($i16Ints[3] & 0b0000111111000000) >> 6),
-      (($i16Ints[3] & 0b1111000000000000) >> 10) | ($i16Ints[4] & 0b0000000000000011),
-      (($i16Ints[4] & 0b0000000011111100) >> 2),
-      (($i16Ints[4] & 0b0011111100000000) >> 8),
-      (($i16Ints[4] & 0b1100000000000000) >> 10) | ($i16Ints[5] & 0b0000000000001111),
-      (($i16Ints[5] & 0b0000001111110000) >> 4),
-      (($i16Ints[5] & 0b1111110000000000) >> 10),
-    ];
+    $supportedVersion = [1];
+    $versionData = unpack("v", substr($buffer, self::versionOffset, 2));
+    if (!in_array($versionData[1], $supportedVersion)) {
+      throw new Exception("Unsupported version data. Expected: " . implode(", ", $supportedVersion) . ", got: " . $versionData[1]);
+    }
+
+    return new JadwalSholat($buffer);
   }
 
   public function __construct(
-    private readonly Metadata $metadata,
     private readonly string $buffer,
-  ) {
+  ) {}
+
+  public function getDataTimestamp(): DateTime
+  {
+    $timestamp = unpack("P", substr($this->buffer, self::timestampOffset, 8))[1];
+    return DateTime::createFromFormat(
+      "U",
+      round($timestamp / 1000),
+    );
+  }
+
+  /**
+   * @return array<string>
+   */
+  public function getProvinces(): array
+  {
+    $numOfProvinces = ord($this->buffer[self::numOfProvincesOffset]);
+
+    $provinceNamesIndicesBuffer = substr(
+      $this->buffer,
+      self::provinceNamesIndicesOffset,
+      $numOfProvinces * 2,
+    );
+
+    $provinceNamesOffset = unpack("P", substr($this->buffer, self::provinceNamesOffsetOffset, 8))[1];
+
+    $provinceNames = [];
+    for ($provinceIndex = 0; $provinceIndex < $numOfProvinces; $provinceIndex++) {
+      $provinceIndexOffset = $provinceIndex * 2;
+      $provinceNameIndexOffset = unpack("v", substr($provinceNamesIndicesBuffer, $provinceIndexOffset, 2))[1];
+      $provinceNameLengthOffset = $provinceNamesOffset + $provinceNameIndexOffset;
+      $provinceNameLength = ord($this->buffer[$provinceNameLengthOffset]);
+      $provinceNameOffset = $provinceNameLengthOffset
+        + 1 // province name length as u8
+      ;
+      $provinceName = substr($this->buffer, $provinceNameOffset, $provinceNameLength);
+      array_push($provinceNames, $provinceName);
+    }
+
+    return $provinceNames;
+  }
+
+  /**
+   * @return array<string>
+   */
+  public function getRegencies(string $provinceName): array
+  {
+    $numOfProvinces = ord($this->buffer[self::numOfProvincesOffset]);
+
+    $provinceNamesIndicesBuffer = substr(
+      $this->buffer,
+      self::provinceNamesIndicesOffset,
+      $numOfProvinces * 2,
+    );
+
+    $provinceNamesOffset = unpack("P", substr($this->buffer, self::provinceNamesOffsetOffset, 8))[1];
+
+    for ($provinceIndex = 0; $provinceIndex < $numOfProvinces; $provinceIndex++) {
+      $provinceIndexOffset = $provinceIndex * 2;
+      $provinceNameIndexOffset = unpack("v", substr($provinceNamesIndicesBuffer, $provinceIndexOffset, 2))[1];
+      $provinceNameLengthOffset = $provinceNamesOffset + $provinceNameIndexOffset;
+      $provinceNameLength = ord($this->buffer[$provinceNameLengthOffset]);
+      $provinceNameOffset = $provinceNameLengthOffset
+        + 1 // province name length as u8
+      ;
+      $decodedProvinceName = substr($this->buffer, $provinceNameOffset, $provinceNameLength);
+      if ($decodedProvinceName === $provinceName) {
+        $numOfRegenciesOffset = $provinceNameOffset + $provinceNameLength;
+        $numOfRegencies = ord($this->buffer[$numOfRegenciesOffset]);
+
+        $regencyNames = [];
+        $regenciesOffset = $numOfRegenciesOffset
+          + 1 // number of regencies as u8
+        ;
+        for ($regencyIndex = 0; $regencyIndex < $numOfRegencies; $regencyIndex++) {
+          $regencyNameLength = ord($this->buffer[$regenciesOffset]);
+          $regenciesOffset += 1;
+          $regencyName = substr($this->buffer, $regenciesOffset, $regencyNameLength);
+          $regenciesOffset += $regencyNameLength;
+          array_push($regencyNames, $regencyName);
+        }
+
+        return $regencyNames;
+      }
+    }
+
+    throw new Exception("Province not found: " . $provinceName);
   }
 
   /**
    * @return array<Schedule>
    */
-  public function getSchedules(string $province, string $regency)
+  public function getSchedules(string $provinceName, string $regencyName)
   {
-    [$locationContentWidth, $locationContentBeginAt] = $this->getLocationContentCursor($province, $regency);
+    $regencySchedulesIndex = $this->getRegencySchedulesIndex($provinceName, $regencyName);
 
-    $dateMonthMetadataWidth = 1 * 2;
-    $dateMonthGroupWidth = 7 * 2;
-    $dateMonthGroupLength = $locationContentWidth / $dateMonthGroupWidth;
-    $dateMonthContentWidth = $dateMonthGroupWidth - $dateMonthMetadataWidth;
+    if ($regencySchedulesIndex === null) {
+      throw new Exception("Regency not found: " . $regencyName);
+    }
 
+    [$provinceIndex, $regencyIndex] = $regencySchedulesIndex;
+
+    $numOfProvinces = ord($this->buffer[self::numOfProvincesOffset]);
+    $numOfSchedules = unpack("v", substr($this->buffer, self::numOfSchedulesOffset, 2))[1];
+    $schedulesIndicesOffset = self::provinceNamesIndicesOffset
+      + ($numOfProvinces * 2) // number of schedules as u16
+    ;
+
+    $provinceRegencyIndexOffset = $schedulesIndicesOffset
+      + ($provinceIndex * 2) // province schedules index as u16
+    ;
+    $provinceRegencyIndex = unpack("v", substr($this->buffer, $provinceRegencyIndexOffset, 2))[1];
+    $regencyScheduleIndex = $provinceRegencyIndex + $regencyIndex;
+
+    $regencyScheduleSize = $numOfSchedules * self::scheduleSize;
+    $schedulesOffset = $schedulesIndicesOffset
+      + ($numOfProvinces * 2) // province schedules indices as u16
+    ;
+    $regencySceduleOffset = $schedulesOffset
+      + ($regencyScheduleIndex * $regencyScheduleSize) // regency schedule offset as u16
+    ;
+
+    /** @var Array<Schedule> */
     $schedules = [];
-
-    for ($index = 0; $index < $dateMonthGroupLength; $index++) {
-      $beginReadAt = $locationContentBeginAt + ($index * $dateMonthGroupWidth);
-      $date = (int) ord($this->buffer[$beginReadAt]);
-      $month = (int) ord($this->buffer[$beginReadAt + 1]);
-      $dateMonthBuffer = substr(
-        $this->buffer,
-        $beginReadAt + $dateMonthMetadataWidth, /** remove date month data */
-        $dateMonthContentWidth,
-      );
-      $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
-      array_push($schedules, new Schedule($date, $month, [
-        new Time(JadwalSholat::LABEL_IMSYA, $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
-        new Time(JadwalSholat::LABEL_SUBUH, $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
-        new Time(JadwalSholat::LABEL_TERBIT, $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
-        new Time(JadwalSholat::LABEL_DUHA, $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
-        new Time(JadwalSholat::LABEL_DZUHUR, $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
-        new Time(JadwalSholat::LABEL_ASHAR, $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
-        new Time(JadwalSholat::LABEL_MAGRIB, $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
-        new Time(JadwalSholat::LABEL_ISYA, $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
-      ]));
+    for ($scheduleIndex = 0; $scheduleIndex < $numOfSchedules; $scheduleIndex++) {
+      $scheduleOffset = $regencySceduleOffset
+        + ($scheduleIndex * self::scheduleSize);
+      $month = ord($this->buffer[$scheduleOffset]);
+      $date = ord($this->buffer[$scheduleOffset + 1]);
+      $hour = ord($this->buffer[$scheduleOffset + 2]);
+      $minute = ord($this->buffer[$scheduleOffset + 3]);
+      /** @var Schedule */
+      $schedule = null;
+      if (isset($schedules[count($schedules) - 1])) {
+        $schedule = $schedules[count($schedules) - 1];
+      }
+      if ($schedule === null || $schedule->month !== $month || $schedule->date !== $date) {
+        $schedule = new Schedule($month, $date, []);
+        array_push($schedules, $schedule);
+      }
+      array_push($schedule->times, new Time(
+        self::LABELS[count($schedule->times)],
+        $hour,
+        $minute,
+      ));
     }
 
     return $schedules;
@@ -123,71 +237,51 @@ class JadwalSholat
    */
   public function getTimes(string $province, string $regency, int $date, int $month)
   {
-    [$locationContentWidth, $locationContentBeginAt] = $this->getLocationContentCursor($province, $regency);
-
-    $dateMonthMetadataWidth = 1 * 2;
-    $dateMonthGroupWidth = 7 * 2;
-    $dateMonthGroupLength = $locationContentWidth / $dateMonthGroupWidth;
-    $dateMonthContentWidth = $dateMonthGroupWidth - $dateMonthMetadataWidth;
-
-    for ($index = 0; $index < $dateMonthGroupLength; $index++) {
-      $beginReadAt = $locationContentBeginAt + ($index * $dateMonthGroupWidth);
-      if (ord($this->buffer[$beginReadAt]) === $date && $month === ord($this->buffer[$beginReadAt + 1])) {
-        $dateMonthBuffer = substr(
-          $this->buffer,
-          $beginReadAt + $dateMonthMetadataWidth, /** remove date month data */
-          $dateMonthContentWidth,
-        );
-
-        $pairOfHourAndMinute = static::decompactTimesBinary($dateMonthBuffer);
-
-        return [
-          new Time(JadwalSholat::LABEL_IMSYA, $pairOfHourAndMinute[0], $pairOfHourAndMinute[1]),
-          new Time(JadwalSholat::LABEL_SUBUH, $pairOfHourAndMinute[2], $pairOfHourAndMinute[3]),
-          new Time(JadwalSholat::LABEL_TERBIT, $pairOfHourAndMinute[4], $pairOfHourAndMinute[5]),
-          new Time(JadwalSholat::LABEL_DUHA, $pairOfHourAndMinute[6], $pairOfHourAndMinute[7]),
-          new Time(JadwalSholat::LABEL_DZUHUR, $pairOfHourAndMinute[8], $pairOfHourAndMinute[9]),
-          new Time(JadwalSholat::LABEL_ASHAR, $pairOfHourAndMinute[10], $pairOfHourAndMinute[11]),
-          new Time(JadwalSholat::LABEL_MAGRIB, $pairOfHourAndMinute[12], $pairOfHourAndMinute[13]),
-          new Time(JadwalSholat::LABEL_ISYA, $pairOfHourAndMinute[14], $pairOfHourAndMinute[15]),
-        ];
-      }
-    }
-
-    throw new Exception("Times not found");
+    return [];
   }
 
-  private function getLocationContentCursor(string $province, string $regency)
+  private function getRegencySchedulesIndex(string $provinceName, string $regencyName): null|array
   {
-    $location = $this->metadata->getLocation($province, $regency);
+    $numOfProvinces = ord($this->buffer[self::numOfProvincesOffset]);
 
-    $locationGroupWidth = 2556 * 2;
-    $locationGroupLength = strlen($this->buffer) / $locationGroupWidth;
-    $locationGroupBeginAt = null;
-    $locationMetadataWidth = 1 * 2;
-    $locationContentBeginAt = null;
-    $locationContentWidth = $locationGroupWidth - $locationMetadataWidth;
+    $provinceNamesIndicesBuffer = substr(
+      $this->buffer,
+      self::provinceNamesIndicesOffset,
+      $numOfProvinces * 2,
+    );
 
-    for ($index = 0; $index < $locationGroupLength; $index++) {
-      $beginReadAt = $index * $locationGroupWidth;
-      $currentLocation = static::join8bitTo16bit(
-        ord($this->buffer[$beginReadAt]),
-        ord($this->buffer[$beginReadAt + 1]),
-      );
-      if ($currentLocation === $location) {
-        $locationGroupBeginAt = $beginReadAt;
-        $locationContentBeginAt = $beginReadAt + $locationMetadataWidth;
-        break;
+    $provinceNamesOffset = unpack("P", substr($this->buffer, self::provinceNamesOffsetOffset, 8))[1];
+
+    for ($provinceIndex = 0; $provinceIndex < $numOfProvinces; $provinceIndex++) {
+      $provinceIndexOffset = $provinceIndex * 2;
+      $provinceNameIndexOffset = unpack("v", substr($provinceNamesIndicesBuffer, $provinceIndexOffset, 2))[1];
+      $provinceNameLengthOffset = $provinceNamesOffset + $provinceNameIndexOffset;
+      $provinceNameLength = ord($this->buffer[$provinceNameLengthOffset]);
+      $provinceNameOffset = $provinceNameLengthOffset
+        + 1 // province name length as u8
+      ;
+      $decodedProvinceName = substr($this->buffer, $provinceNameOffset, $provinceNameLength);
+      if ($decodedProvinceName === $provinceName) {
+        $numOfRegenciesOffset = $provinceNameOffset + $provinceNameLength;
+        $numOfRegencies = ord($this->buffer[$numOfRegenciesOffset]);
+        $regenciesOffset = $numOfRegenciesOffset
+          + 1 // number of regencies as u8
+        ;
+        for ($regencyIndex = 0; $regencyIndex < $numOfRegencies; $regencyIndex++) {
+          $regencyNameLength = ord($this->buffer[$regenciesOffset]);
+          $regenciesOffset += 1;
+          $decodedRegencyName = substr($this->buffer, $regenciesOffset, $regencyNameLength);
+          $regenciesOffset += $regencyNameLength;
+          if ($decodedRegencyName === $regencyName) {
+            return [
+              $provinceIndex,
+              $regencyIndex,
+            ];
+          }
+        }
       }
     }
 
-    if ($locationGroupBeginAt === null) {
-      throw new Exception("Schedules not found");
-    }
-
-    return [
-      $locationContentWidth,
-      $locationContentBeginAt
-    ];
+    return null;
   }
 }

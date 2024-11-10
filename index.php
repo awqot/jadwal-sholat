@@ -5,29 +5,34 @@ namespace Awqot\JadwalSholat;
 require_once __DIR__ . "/vendor/autoload.php";
 
 use DateTime;
+use Exception;
 
 $selectedProvince = isset($_GET["province"]) ? $_GET["province"] : "DKI JAKARTA";
 $selectedRegency = isset($_GET["regency"]) ? $_GET["regency"] : "KOTA JAKARTA";
 
-$metadata = Metadata::fromFile(
-  __DIR__ . "/data/jadwal-sholat.metadata",
-);
-
 $jadwalSholat = JadwalSholat::default();
 
-$provinces = $metadata->getProvinces();
-$regencies = $metadata->getRegencies($selectedProvince);
-$schedules = $jadwalSholat->getSchedules($selectedProvince, $selectedRegency);
+$provinces = $jadwalSholat->getProvinces();
+$regencies = [];
+$schedules = [];
+
+try {
+  $regencies = $jadwalSholat->getRegencies($selectedProvince);
+  $schedules = $jadwalSholat->getSchedules($selectedProvince, $selectedRegency);
+}
+catch (Exception $error) {
+}
 
 $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-?><!DOCTYPE html>
+?>
+<!DOCTYPE html>
 <html lang="id">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jadwal Sholat</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" media="screen">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" media="screen">
   <script type="module">
     function applyTheme() {
       if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -45,26 +50,33 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt',
         size: A4;
         margin: 1cm;
       }
+
       body {
         font-family: sans-serif;
       }
+
       form {
         display: none;
       }
+
       table {
         width: 100%;
         border-collapse: collapse;
       }
-      thead th, tbody td {
+
+      thead th,
+      tbody td {
         border: 1px solid #000;
         text-align: center;
         padding: 4px;
       }
+
       tfoot td {
         border: none;
         font-style: italic;
         padding: 4px;
       }
+
       tfoot td p {
         margin: .25rem 0px;
       }
@@ -92,15 +104,13 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt',
                     id="province-select"
                     class="form-select"
                     name="province"
-                    required
-                  >
+                    required>
                     <?php foreach ($provinces as $province): ?>
                       <option
                         value="<?= $province ?>"
                         <?php if ($province === $selectedProvince): ?>
-                          selected
-                        <?php endif ?>
-                      ><?= $province ?></option>
+                        selected
+                        <?php endif ?>><?= $province ?></option>
                     <?php endforeach ?>
                   </select>
                 </div>
@@ -114,15 +124,13 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt',
                     id="regency-select"
                     class="form-select"
                     name="regency"
-                    required
-                  >
+                    required>
                     <?php foreach ($regencies as $regency): ?>
                       <option
                         value="<?= $regency ?>"
                         <?php if ($regency === $selectedRegency): ?>
-                          selected
-                        <?php endif ?>
-                      ><?= $regency ?></option>
+                        selected
+                        <?php endif ?>><?= $regency ?></option>
                     <?php endforeach ?>
                   </select>
                 </div>
@@ -168,7 +176,7 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt',
           <tfoot>
             <tr>
               <td colspan="9">
-                <p class="text-start fst-italic">Data jadwal sholat diambil dari <a href="https://bimasislam.kemenag.go.id/">https://bimasislam.kemenag.go.id</a> pada <time value="<?= date(DateTime::RFC3339, round($metadata->timestamp / 1000)) ?>"></time></p>
+                <p class="text-start fst-italic">Data jadwal sholat diambil dari <a href="https://bimasislam.kemenag.go.id/">https://bimasislam.kemenag.go.id</a> pada <time value="<?= $jadwalSholat->getDataTimestamp()->format(DateTime::RFC3339) ?>"><?= $jadwalSholat->getDataTimestamp()->format("d M Y H:i:s") ?></time></p>
               </td>
             </tr>
           </tfoot>
@@ -176,9 +184,11 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt',
       </div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script type="module">
-    import { JadwalSholat } from './jadwal-sholat.js';
+    import {
+      JadwalSholat
+    } from './jadwal-sholat.js';
 
     const jadwalSholat = new JadwalSholat(location.origin + location.pathname.split('/').slice(0, -1).join('/'));
 
