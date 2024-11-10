@@ -2,8 +2,8 @@
   "name": "jadwal-sholat",
   "version": "1.0.0",
   "description": "Data jadwal waktu sholat",
-  "main": "js/jadwal-sholat.js",
-  "module": "js/jadwal-sholat.js",
+  "main": "js/jadwal-sholat.mjs",
+  "module": "js/jadwal-sholat.mjs",
   "type": "module",
   "repository": {
     "type": "git",
