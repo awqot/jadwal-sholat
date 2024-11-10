@@ -137,10 +137,9 @@
     crossorigin="anonymous"></script>
 
   <script type="module">
-    import { JadwalSholat } from './js/jadwal-sholat.mjs';
+    import { createJadwalSholatFromUrl } from './js/jadwal-sholat.mjs';
 
-    const cdn = location.origin + location.pathname.split('/').slice(0, -1).join('/');
-    const jadwalSholat = new JadwalSholat(cdn);
+    const jadwalSholat = await createJadwalSholatFromUrl('/data/jadwal-sholat.ajs');
 
 
     /** ===== CONTEXT ===== */

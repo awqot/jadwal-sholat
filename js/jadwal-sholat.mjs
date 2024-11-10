@@ -57,17 +57,18 @@ export class JadwalSholat {
     ];
   };
 
-  #cdn = /** @type {string} */ ('');
-
   #data = /** @type {Uint8Array} */ (new Uint8Array([]));
   #view = /** @type {DataView} */ (new DataView(this.#data.buffer));
   #dataTimestamp = /** @type {Date} */ (new Date());
 
   /**
-   * @param {string} cdn
+   * @param {Uint8Array} data
    */
-  constructor(cdn) {
-    this.#cdn = cdn;
+  constructor(data) {
+    this.#data = data;
+    this.#view = new DataView(this.#data.buffer);
+    const timestamp = Number(this.#view.getBigUint64(timestampOffset, true));
+    this.#dataTimestamp = new Date(timestamp);
   }
 
   /**
@@ -362,20 +363,9 @@ export class JadwalSholat {
     return undefined;
   }
 
-  get #dataUrl() {
-    return `${this.#cdn}/data/jadwal-sholat.ajs`;
-  }
-
   async #ensureDataLoaded() {
     if (this.#data.byteLength === 0) {
-      console.info(`Fetching data from ${this.#dataUrl}`);
-      const resp = await fetch(this.#dataUrl);
-      const respBodyBuffer = await resp.arrayBuffer();
-      const respBodyU8a = new Uint8Array(respBodyBuffer);
-      this.#data = respBodyU8a;
-      this.#view = new DataView(this.#data.buffer);
-      const timestamp = Number(this.#view.getBigUint64(timestampOffset, true));
-      this.#dataTimestamp = new Date(timestamp);
+      throw new Error('Data not loaded.');
     }
 
     const magicWord = [65, 87, 81, 84, 83, 72, 76, 84]; // AWQTSHLT
@@ -412,3 +402,13 @@ export class JadwalSholat {
  * @property {number} hour
  * @property {number} minute
  */
+
+/**
+ * @param {string} url
+ * @returns
+ */
+export async function createJadwalSholatFromUrl(url) {
+  const response = await fetch(url);
+  const data = new Uint8Array(await response.arrayBuffer());
+  return new JadwalSholat(data);
+}

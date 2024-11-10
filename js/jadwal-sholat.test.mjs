@@ -1,13 +1,13 @@
 // @ts-check
 
+import assert from 'node:assert';
 import { access, constants, readFile } from 'node:fs/promises';
 import { Server, createServer } from 'node:http';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { URL } from 'node:url';
 
-import { JadwalSholat } from './jadwal-sholat.mjs';
-import assert from 'node:assert';
+import { createJadwalSholatFromUrl, JadwalSholat } from './jadwal-sholat.mjs';
 
 /** @typedef {import('../js/jadwal-sholat.mjs').Schedule} Schedule */
 
@@ -23,7 +23,7 @@ describe('JadwalSholat', function () {
   before(async function () {
     server = await serveWorkingDir();
     const serverUrl = getUrlFromServer(server);
-    jadwalSholat = new JadwalSholat(serverUrl);
+    jadwalSholat = await createJadwalSholatFromUrl(serverUrl);
   });
 
   after(function () {
