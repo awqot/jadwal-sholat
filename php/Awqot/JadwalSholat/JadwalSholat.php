@@ -235,7 +235,7 @@ class JadwalSholat
   /**
    * @return array<Time>
    */
-  public function getTimes(string $province, string $regency, int $date, int $month)
+  public function getTimes(string $province, string $regency, int $month, int $date)
   {
     $regencySchedulesIndex = $this->getRegencySchedulesIndex($province, $regency);
 
