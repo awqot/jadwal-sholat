@@ -237,7 +237,57 @@ class JadwalSholat
    */
   public function getTimes(string $province, string $regency, int $date, int $month)
   {
-    return [];
+    $regencySchedulesIndex = $this->getRegencySchedulesIndex($province, $regency);
+
+    if ($regencySchedulesIndex === null) {
+      throw new Exception("Regency " . $regency . " in province " . $province . " not found");
+    }
+
+    [$provinceIndex, $regencyIndex] = $regencySchedulesIndex;
+
+    $numOfProvinces = ord($this->buffer[self::numOfProvincesOffset]);
+    $numOfSchedules = unpack("v", substr($this->buffer, self::numOfSchedulesOffset, 2))[1];
+    $schedulesIndicesOffset = self::provinceNamesIndicesOffset
+      + ($numOfProvinces * 2) // number of schedules as u16
+    ;
+
+    $provinceRegencyIndexOffset = $schedulesIndicesOffset
+      + ($provinceIndex * 2) // province schedules index as u16
+    ;
+    $provinceRegencyIndex = unpack("v", substr($this->buffer, $provinceRegencyIndexOffset, 2))[1];
+    $regencyScheduleIndex = $provinceRegencyIndex + $regencyIndex;
+
+    $regencyScheduleSize = $numOfSchedules * self::scheduleSize;
+    $schedulesOffset = $schedulesIndicesOffset
+      + ($numOfProvinces * 2) // province schedules indices as u16
+    ;
+
+    $regencySceduleOffset = $schedulesOffset
+      + ($regencyScheduleIndex * $regencyScheduleSize) // regency schedule offset as u16
+    ;
+
+    /** @var Array<Time> */
+    $times = [];
+    for ($scheduleIndex = 0; $scheduleIndex < $numOfSchedules; $scheduleIndex++) {
+      $scheduleOffset = $regencySceduleOffset
+        + ($scheduleIndex * self::scheduleSize);
+      $scheduleMonth = ord($this->buffer[$scheduleOffset]);
+      $scheduleDate = ord($this->buffer[$scheduleOffset + 1]);
+      if ($scheduleMonth === $month && $scheduleDate === $date) {
+        $hour = ord($this->buffer[$scheduleOffset + 2]);
+        $minute = ord($this->buffer[$scheduleOffset + 3]);
+        array_push($times, new Time(
+          self::LABELS[count($times)],
+          $hour,
+          $minute,
+        ));
+      }
+      if (count($times) === count(self::LABELS)) {
+        break 1;
+      }
+    }
+
+    return $times;
   }
 
   private function getRegencySchedulesIndex(string $provinceName, string $regencyName): null|array

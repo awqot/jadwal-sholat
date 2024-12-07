@@ -1,31 +1,33 @@
 // @ts-check
 
+const magicWord = [65, 87, 81, 84, 83, 72, 76, 84]; // AWQTSHLT
+
 const versionOffset = 0
-  + 8 // magic word
+  + magicWord.length // magic word
   ;
 
 const timestampOffset = versionOffset
-  + 2 // version
+  + 2 // version as u16
   ;
 
 const numOfProvincesOffset = timestampOffset
-  + 8 // timestamp
+  + 8 // timestamp as u64
   ;
 
 const numOfRegenciesOffset = numOfProvincesOffset
-  + 1 // number of provinces
+  + 1 // number of provinces as u8
   ;
 
 const numOfSchedulesOffset = numOfRegenciesOffset
-  + 2 // number of regencies
+  + 2 // number of regencies as u16
   ;
 
 const provinceNamesOffsetOffset = numOfSchedulesOffset
-  + 2 // number of schedules
+  + 2 // number of schedules as u16
   ;
 
 const provinceNamesIndicesOffset = provinceNamesOffsetOffset
-  + 8 // province names offset
+  + 8 // province names offset as u64
   ;
 
 const scheduleSize = 0
@@ -282,15 +284,16 @@ export class JadwalSholat {
 
     /** @type {Array<Time>} */
     const times = [];
+    scheduleLoop:
     for (let scheduleIndex = 0; scheduleIndex < numOfSchedules; scheduleIndex++) {
       const scheduleOffset = regencySceduleOffset
         + (scheduleIndex * scheduleSize)
         ;
       const scheduleMonth = this.#data[scheduleOffset];
       const scheduleDate = this.#data[scheduleOffset + 1];
-      const hour = this.#data[scheduleOffset + 2];
-      const minute = this.#data[scheduleOffset + 3];
       if (scheduleMonth === month && scheduleDate === date) {
+        const hour = this.#data[scheduleOffset + 2];
+        const minute = this.#data[scheduleOffset + 3];
         times.push({
           label: JadwalSholat.LABELS[times.length],
           hour,
@@ -298,7 +301,7 @@ export class JadwalSholat {
         });
       }
       if (times.length === JadwalSholat.LABELS.length) {
-        break;
+        break scheduleLoop;
       }
     }
 
@@ -368,7 +371,6 @@ export class JadwalSholat {
       throw new Error('Data not loaded.');
     }
 
-    const magicWord = [65, 87, 81, 84, 83, 72, 76, 84]; // AWQTSHLT
     for (let index = 0; index < magicWord.length; index++) {
       if (this.#data[index] !== magicWord[index]) {
         throw new Error(`Invalid magic word data. Expected: ${magicWord.join(', ')}. Actual: ${Array.from(this.#data.subarray(0, magicWord.length)).join(', ')}.`);
